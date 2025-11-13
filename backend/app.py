@@ -1,0 +1,109 @@
+# -*- coding: utf-8 -*-
+"""
+知识图谱系统Flask后端
+"""
+
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
+import os
+import logging
+from werkzeug.exceptions import RequestEntityTooLarge
+
+# 导入蓝图
+from routes.settings import settings_bp
+from routes.home import home_bp
+from routes.import_routes import import_bp
+from routes.search import search_bp
+from routes.visualization import visualization_bp
+from routes.evaluation import evaluation_bp
+from routes.graphrag import graphrag_bp
+
+# 导入数据库连接
+from db import test_connection, close_driver
+
+# 创建Flask应用
+app = Flask(__name__)
+
+# 配置
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB
+app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads')
+
+# 启用CORS
+CORS(app, 
+     origins=['http://localhost:8081', 'http://127.0.0.1:8081'],
+     methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+     allow_headers=['Content-Type', 'Authorization'],
+     supports_credentials=True)
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# 确保上传目录存在
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# 注册蓝图
+app.register_blueprint(settings_bp, url_prefix='/api/settings')
+app.register_blueprint(home_bp, url_prefix='/api/home')
+app.register_blueprint(import_bp, url_prefix='/api/import')
+app.register_blueprint(search_bp, url_prefix='/api/search')
+app.register_blueprint(visualization_bp, url_prefix='/api/visualization')
+app.register_blueprint(evaluation_bp, url_prefix='/api/evaluation')
+app.register_blueprint(graphrag_bp, url_prefix='/api/graphrag')
+
+# 静态文件服务
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+# 前端静态文件服务
+@app.route('/')
+def index():
+    frontend_dist = os.path.join(os.path.dirname(__file__), '../frontend/dist')
+    if os.path.exists(os.path.join(frontend_dist, 'index.html')):
+        return send_from_directory(frontend_dist, 'index.html')
+    return jsonify({'message': '前端文件未找到'}), 404
+
+@app.route('/<path:filename>')
+def frontend_static(filename):
+    frontend_dist = os.path.join(os.path.dirname(__file__), '../frontend/dist')
+    if os.path.exists(os.path.join(frontend_dist, filename)):
+        return send_from_directory(frontend_dist, filename)
+    # 如果文件不存在，返回index.html（用于SPA路由）
+    if os.path.exists(os.path.join(frontend_dist, 'index.html')):
+        return send_from_directory(frontend_dist, 'index.html')
+    return jsonify({'message': '文件未找到'}), 404
+
+# 错误处理
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({'message': '接口不存在'}), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    logger.error(f'服务器内部错误: {error}')
+    return jsonify({'message': '服务器内部错误'}), 500
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_file_too_large(error):
+    return jsonify({'message': '文件过大，请上传小于100MB的文件'}), 413
+
+def test_db_connection():
+    """测试数据库连接"""
+    try:
+        test_connection()
+        logger.info('数据库连接测试成功')
+    except Exception as e:
+        logger.error(f'数据库连接测试失败: {e}')
+
+# 在应用启动时测试数据库连接
+with app.app_context():
+    test_db_connection()
+
+# 优雅关闭
+import atexit
+atexit.register(close_driver)
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=True)

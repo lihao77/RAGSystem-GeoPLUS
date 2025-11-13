@@ -1,0 +1,71 @@
+import { createRouter, createWebHistory } from 'vue-router'
+
+const routes = [
+  {
+    path: '/',
+    name: 'home',
+    component: () => import('../views/HomeView.vue'),
+    meta: { title: '首页' }
+  },
+  // {
+  //   path: '/graph',
+  //   name: 'graph',
+  //   component: () => import('../views/GraphView.vue'),
+  //   meta: { title: '知识图谱' }
+  // },
+  // {
+  //   path: '/map',
+  //   name: 'map',
+  //   component: () => import('../views/MapView.vue'),
+  //   meta: { title: '地理视图' }
+  // },
+  {
+    path: '/split',
+    name: 'split',
+    component: () => import('../views/SplitView.vue'),
+    meta: { title: '综合视图' }
+  },
+  {
+    path: '/search',
+    name: 'search',
+    component: () => import('../views/SearchView.vue'),
+    meta: { title: '实体查询' }
+  },
+  {
+    path: '/settings',
+    name: 'settings',
+    component: () => import('../views/SettingsView.vue'),
+    meta: { title: '系统设置' }
+  },
+  {
+    path: '/import',
+    name: 'import',
+    component: () => import('../views/ImportView.vue'),
+    meta: { title: '数据导入' }
+  },
+  {
+    path: '/evaluation',
+    name: 'evaluation',
+    component: () => import('../views/EvaluationView.vue'),
+    meta: { title: '图谱评估' }
+  },
+  {
+    path: '/graphrag',
+    name: 'graphrag',
+    component: () => import('../views/GraphRAGView.vue'),
+    meta: { title: 'GraphRAG 问答' }
+  }
+]
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes
+})
+
+router.beforeEach((to, from, next) => {
+  // 设置页面标题
+  document.title = to.meta.title ? `${to.meta.title} - 知识图谱可视化系统` : '知识图谱可视化系统'
+  next()
+})
+
+export default router

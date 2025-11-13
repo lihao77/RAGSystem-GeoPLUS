@@ -1,0 +1,28 @@
+# Flask核心框架
+Flask==2.3.3
+Flask-CORS==4.0.0
+
+# Neo4j数据库驱动
+neo4j==5.13.0
+
+# HTTP请求库
+requests==2.31.0
+
+# 环境变量管理
+python-dotenv==1.0.0
+
+# 日志处理
+coloredlogs==15.0.1
+
+# 文件处理
+Werkzeug==2.3.7
+
+# JSON处理（Python内置，但列出以确保兼容性）
+# json - 内置模块
+
+# 系统相关（Python内置）
+# os - 内置模块
+# subprocess - 内置模块
+# datetime - 内置模块
+# uuid - 内置模块
+# logging - 内置模块
