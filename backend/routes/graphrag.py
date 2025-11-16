@@ -561,6 +561,8 @@ def query():
         #         'success': False,
         #         'message': '生成查询语句失败'
         #     }), 500
+        
+        # 临时硬编码Cypher用于测试(可用)
         cypher = '''
 MATCH (target:entity)
 WHERE target.id CONTAINS '潘厂水库'
