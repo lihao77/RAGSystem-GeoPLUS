@@ -17,6 +17,7 @@ from routes.search import search_bp
 from routes.visualization import visualization_bp
 from routes.evaluation import evaluation_bp
 from routes.graphrag import graphrag_bp
+from routes.function_call import function_call_bp
 
 # 导入数据库连接
 from db import test_connection, close_driver
@@ -50,6 +51,7 @@ app.register_blueprint(search_bp, url_prefix='/api/search')
 app.register_blueprint(visualization_bp, url_prefix='/api/visualization')
 app.register_blueprint(evaluation_bp, url_prefix='/api/evaluation')
 app.register_blueprint(graphrag_bp, url_prefix='/api/graphrag')
+app.register_blueprint(function_call_bp, url_prefix='/api/function-call')
 
 # 静态文件服务
 @app.route('/uploads/<filename>')
