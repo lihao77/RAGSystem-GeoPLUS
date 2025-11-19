@@ -67,22 +67,13 @@ def execute_tool(tool_name, arguments):
 def search_knowledge_graph(keyword="", category="", document_source="", 
                            time_range=None, location=None, advanced_query=""):
     """
-    搜索知识图谱中的实体
+    搜索知识图谱中的实体和状态
     
-    这是对原有 /api/search/entities 接口的封装
+    根据category参数决定查询基础实体(:entity)还是状态节点(:State)
     """
     session = None
     try:
         session = get_session()
-        
-        # 获取匹配关键词的实体ID
-        entity_ids = []
-        if keyword and keyword.strip():
-            entity_ids_result = session.run(
-                'MATCH (n) WHERE n.name CONTAINS $keyword AND (n:地点 OR n:设施 OR n:事件) RETURN n.id AS id LIMIT 100',
-                {'keyword': keyword}
-            )
-            entity_ids = [record['id'] for record in entity_ids_result]
         
         # 格式化时间范围
         time_range_new = {'start': '', 'end': ''}
@@ -90,70 +81,125 @@ def search_knowledge_graph(keyword="", category="", document_source="",
             time_range_new['start'] = time_range[0]
             time_range_new['end'] = time_range[1]
         
-        # 动态拼接Cypher查询
-        cypher = 'MATCH (n) WHERE n:State'
         params = {}
-        
-        # 关键词
-        if keyword and keyword.strip():
-            cypher += ' AND size(apoc.coll.intersection(n.entity_ids, $entityids)) > 0'
-            params['entityids'] = entity_ids
-        
-        # 类别
-        if category and category.strip():
-            cypher += ' AND (n.id CONTAINS $category OR $category IN labels(n))'
-            params['category'] = category
-        
-        # 来源
-        if document_source and document_source.strip():
-            cypher += ' AND n.source = $source'
-            params['source'] = document_source
-        
-        # 地理位置
-        if location and len(location) > 0 and location[-1] and location[-1].strip():
-            cypher += ' AND (n.id CONTAINS $location)'
-            params['location'] = location[-1]
-        
-        # 时间范围
-        if time_range_new['start'] and time_range_new['end']:
-            cypher += ''' AND (
-        (n.time CONTAINS "至" AND apoc.date.parse(split(n.time, "至")[1], "ms", "yyyy-MM-dd") <= apoc.date.parse($endTime, "ms", "yyyy-MM-dd")
-         AND apoc.date.parse(split(n.time, "至")[0], "ms", "yyyy-MM-dd") >= apoc.date.parse($startTime, "ms", "yyyy-MM-dd"))
-        OR
-        (NOT n.time CONTAINS "至" AND n.time >= $startTime AND n.time <= $endTime)
-      )'''
-            params['startTime'] = time_range_new['start']
-            params['endTime'] = time_range_new['end']
-        
-        # 高级查询
-        if advanced_query and advanced_query.strip():
-            cypher += f' AND ({advanced_query})'
-        
-        cypher += ' RETURN n.id AS id, n.type AS name, n.time AS category, n.source AS source, properties(n) AS properties LIMIT 100'
-        
-        result = session.run(cypher, params)
         entities = []
         
-        for record in result:
-            entity = {
-                'id': record['id'],
-                'name': record['name'],
-                'category': record['category'],
-                'source': record['source'],
-                'properties': convert_neo4j_types(record['properties'])
+        # 根据category决定查询策略
+        if category in ['地点', '设施', '事件']:
+            # 查询基础实体节点 (:地点:entity, :设施:entity, :事件:entity)
+            cypher = f'MATCH (n:{category}:entity) WHERE 1=1'
+            
+            # 关键词匹配
+            if keyword and keyword.strip():
+                cypher += ' AND (n.name CONTAINS $keyword OR n.id CONTAINS $keyword OR n.geo_description CONTAINS $keyword)'
+                params['keyword'] = keyword
+            
+            # 来源
+            if document_source and document_source.strip():
+                cypher += ' AND n.source = $source'
+                params['source'] = document_source
+            
+            # 地理位置（对地点节点特殊处理）
+            if location and len(location) > 0 and location[-1] and location[-1].strip():
+                cypher += ' AND n.id CONTAINS $location'
+                params['location'] = location[-1]
+            
+            # 高级查询
+            if advanced_query and advanced_query.strip():
+                cypher += f' AND ({advanced_query})'
+            
+            cypher += ' RETURN n.id AS id, n.name AS name, labels(n) AS labels, n.source AS source, properties(n) AS properties LIMIT 100'
+            
+            result = session.run(cypher, params)
+            for record in result:
+                entity = {
+                    'id': record['id'],
+                    'name': record['name'],
+                    'category': category,
+                    'labels': record['labels'],
+                    'source': record['source'],
+                    'properties': convert_neo4j_types(record['properties'])
+                }
+                entities.append(entity)
+        
+        elif category == 'State' or category == '':
+            # 查询状态节点 (:State)
+            cypher = 'MATCH (n:State) WHERE 1=1'
+            
+            # 关键词匹配（通过entity_ids字段）
+            if keyword and keyword.strip():
+                # 先查基础实体ID
+                entity_ids_result = session.run(
+                    'MATCH (e) WHERE e:entity AND e.name CONTAINS $keyword RETURN e.id AS id LIMIT 100',
+                    {'keyword': keyword}
+                )
+                entity_ids = [record['id'] for record in entity_ids_result]
+                
+                if entity_ids:
+                    cypher += ' AND (ANY(eid IN n.entity_ids WHERE eid IN $entityids) OR n.id CONTAINS $keyword)'
+                    params['entityids'] = entity_ids
+                    params['keyword'] = keyword
+                else:
+                    cypher += ' AND n.id CONTAINS $keyword'
+                    params['keyword'] = keyword
+            
+            # 来源
+            if document_source and document_source.strip():
+                cypher += ' AND n.source = $source'
+                params['source'] = document_source
+            
+            # 地理位置
+            if location and len(location) > 0 and location[-1] and location[-1].strip():
+                cypher += ' AND (ANY(eid IN n.entity_ids WHERE eid CONTAINS $location) OR n.id CONTAINS $location)'
+                params['location'] = location[-1]
+            
+            # 时间范围（修复：使用start_time和end_time字段）
+            if time_range_new['start'] and time_range_new['end']:
+                cypher += ''' AND (
+                    n.start_time >= date($startTime) AND n.start_time <= date($endTime)
+                )'''
+                params['startTime'] = time_range_new['start']
+                params['endTime'] = time_range_new['end']
+            
+            # 高级查询
+            if advanced_query and advanced_query.strip():
+                cypher += f' AND ({advanced_query})'
+            
+            cypher += ' RETURN n.id AS id, n.state_type AS state_type, n.time AS time, n.source AS source, n.entity_ids AS entity_ids, properties(n) AS properties LIMIT 100'
+            
+            result = session.run(cypher, params)
+            for record in result:
+                entity = {
+                    'id': record['id'],
+                    'name': record['state_type'] or 'State',
+                    'category': 'State',
+                    'time': record['time'],
+                    'source': record['source'],
+                    'entity_ids': record['entity_ids'],
+                    'properties': convert_neo4j_types(record['properties'])
+                }
+                entities.append(entity)
+        
+        else:
+            # 不支持的category
+            return {
+                "success": False,
+                "error": f"不支持的category: {category}，可选值：'地点'、'设施'、'事件'、'State'"
             }
-            entities.append(entity)
         
         return {
             "success": True,
             "data": {
                 "entities": entities,
-                "count": len(entities)
+                "count": len(entities),
+                "query_type": "基础实体" if category in ['地点', '设施', '事件'] else "状态节点"
             }
         }
         
     except Exception as e:
         logger.error(f'搜索知识图谱失败: {e}')
+        import traceback
+        traceback.print_exc()
         return {
             "success": False,
             "error": str(e)

@@ -274,7 +274,8 @@ CALL (ns) {
   WITH ns
   UNWIND ns AS n
   OPTIONAL MATCH (n)-[ha:hasAttribute]->(a:Attribute)
-  RETURN collect({{id: n.id, attrs: collect({{type: ha.type, value: a.value}})}}) AS node_infos
+  WITH n, collect({{type: ha.type, value: a.value}}) AS attrs
+  RETURN collect({{id: n.id, attrs: attrs}}) AS node_infos
 }
 RETURN node_infos, [r IN rs | {{start: startNode(r).id, end: endNode(r).id, type: type(r)}}] AS rels
 LIMIT 20
@@ -851,57 +852,248 @@ def query():
 你拥有以下工具：
 
 📊 **基础检索工具**
-1. search_knowledge_graph - 简单筛选（按关键词、时间、地点）
-2. query_knowledge_graph_with_nl - 复杂自然语言查询（自动生成Cypher）
-3. get_entity_relations - 探索实体关系网络
-4. get_graph_schema - 了解图谱结构
+1. query_knowledge_graph_with_nl - 自然语言查询（自动生成Cypher）⭐推荐优先使用
+   - 必填参数：question（自然语言问题）
+   - 可选参数：history（对话历史，用于上下文理解）
+   - 适用场景：复杂关联查询、模糊查询、多条件组合查询
+
+2. search_knowledge_graph - 结构化筛选查询（支持基础实体和状态节点）
+   - 可选参数：keyword（关键词）、category（类别：地点/设施/事件/State，默认State）、time_range（时间范围数组，仅对State有效）、location（地理位置层级数组）、document_source（文档来源）、advanced_query（高级WHERE子句）
+   - ⚠️重要：category参数决定查询目标！
+     * category='地点'/'设施'/'事件' → 查询基础实体(:entity节点)
+     * category='State'/'' → 查询状态节点(:State节点，包含时序数据和属性)
+   - 适用场景：
+     * 查询基础实体信息（名称、位置）：用category='地点'/'设施'/'事件'
+     * 查询损失、受灾等数据：必须用category='State'！
+     * 按时间范围筛选：只对category='State'有效
+
+3. get_entity_relations - 实体关系网络探索
+   - 必填参数：entity_id（基础实体ID，如'L-450100'、'F-450381-潘厂水库'、'E-450000-20231001-TYPHOON'）
+   - ⚠️注意：只支持基础实体ID（:entity节点），不支持State节点ID（ES-*/LS-*/FS-*/JS-*）
+   - 返回三类关系：
+     * 空间关系：locatedIn（层级）、occurredAt（发生地）
+     * 状态链：hasState（首个状态）、nextState（时间序列）
+     * 因果关系：hasRelation（通过状态节点间接获取）
+   - 适用场景：探索实体的空间位置、历史状态链、因果网络
+
+4. execute_cypher_query - 直接执行Cypher（高级用户专用）
+   - 必填参数：cypher（Cypher查询语句，仅限只读）
+   - 适用场景：需要精确控制查询逻辑
+
+5. get_graph_schema - 获取图谱结构元数据
+   - 无参数
+   - 适用场景：了解节点类型、关系类型、属性schema
 
 🔍 **高级分析工具**
-5. analyze_temporal_pattern - 时序趋势分析（统计某时间段内的变化）
-6. find_causal_chain - 因果链追踪（追踪事件的前因后果）
-7. compare_entities - 多实体对比
-8. aggregate_statistics - 聚合统计（sum/avg/max/min）
-9. get_spatial_neighbors - 空间邻近查询
+6. analyze_temporal_pattern - 时序趋势分析
+   - 必填参数：entity_name（实体名称）、start_date（开始日期YYYY-MM-DD）、end_date（结束日期YYYY-MM-DD）
+   - 可选参数：metric（分析指标，如'降雨量'、'受灾人口'）
+   - 适用场景：趋势分析、周期性分析
 
-**查询示例**
+7. find_causal_chain - 因果链路追踪
+   - 必填参数：start_event（起始事件/实体名称或状态ID）
+   - 可选参数：end_event（目标事件）、max_depth（最大深度，默认3）、direction（方向：forward/backward/both，默认forward）
+   - ⚠️注意：不支持时间过滤！需要精确时间时，start_event应传入完整状态ID（如FS-F-450381-潘厂水库-20200607_20200607）
+   - 适用场景：影响传播分析、溯源分析
 
-🔹 简单查询："2017年7月广西因灾害导致的损失有多少？"
-→ query_knowledge_graph_with_nl("2017年7月广西的灾害损失统计")
-  系统会自动生成宽泛查询，覆盖所有State类型，如果没结果会自动重试
+8. compare_entities - 多实体对比
+   - 必填参数：entity_names（实体名称数组，至少2个）
+   - 可选参数：time_range（时间范围[开始,结束]）、compare_attributes（要比较的属性数组）
+   - 适用场景：对比不同地区/设施的状态差异
 
-🔹 因果查询："潘厂水库2020年泄洪造成了什么影响？"
-→ find_causal_chain(start_event="潘厂水库", time_range=["2020-01-01", "2020-12-31"], direction="forward")
-  直接追踪因果链
+9. aggregate_statistics - 聚合统计
+   - 必填参数：attribute（属性名称，如'受灾人口'）、aggregation（聚合方式：sum/avg/max/min/count）
+   - 可选参数：entity_type（实体类型：地点/设施/事件）、time_range（时间范围）、group_by（分组字段：source/time）
+   - 适用场景：数据汇总、总计、平均值计算
 
-🔹 对比查询："比较2018和2019年南宁市的受灾情况"
-→ compare_entities(entity_names=["南宁市"], time_range=["2018-01-01", "2019-12-31"], compare_attributes=["受灾人口", "经济损失"])
+10. get_spatial_neighbors - 空间邻近查询
+    - 必填参数：entity_name（中心实体名称）
+    - 可选参数：radius（邻近层级，默认1）、neighbor_type（邻居类型：地点/设施/事件）
+    - 适用场景：查找周边实体、影响范围评估
 
-**工具选择指南**
+**查询示例（按场景分类）**
 
-| 问题类型 | 推荐工具 | 原因 |
-|---------|---------|------|
-| "XX的损失/影响" | 先search → 再find_causal_chain → 最后aggregate | 分步获取完整信息 |
-| "XX导致了什么" | find_causal_chain(direction="forward") | 直接追踪影响 |
-| "什么导致了XX" | find_causal_chain(direction="backward") | 溯源分析 |
-| "XX的趋势" | analyze_temporal_pattern | 时序分析 |
-| "对比A和B" | compare_entities | 多实体对比 |
-| "总共/平均/最大" | aggregate_statistics | 统计汇总 |
-| "XX周边/附近" | get_spatial_neighbors | 空间查询 |
-| 复杂查询 | query_knowledge_graph_with_nl | 自动生成Cypher |
+🔹 **损失统计类问题**
+"2017年7月广西因灾害导致的损失有多少？"
+→ query_knowledge_graph_with_nl(question="2017年7月广西的灾害损失统计")
+  说明：自动生成宽泛查询，覆盖所有State类型（事件/地点/联合状态）
 
-**智能查询策略**
-1. ✅ **支持多步推理**：可以先查询基础数据，再追踪关系，最后汇总统计（2-4步）
-2. ✅ **工具内置自适应**：query_knowledge_graph_with_nl 会自动扩大搜索范围，无需手动重试
-3. ✅ **利用上一步结果**：基于前一个工具的结果（如实体ID、状态ID）继续深入查询
-4. ⚠️ **避免无效重复**：如果某个工具返回0条，不要用相同参数再调用一次
-5. ⚠️ **及时决策**：获取到足够数据后，判断是继续深入还是直接回答
-6. ❌ **禁止循环**：不要连续3次调用同一个工具
+"2020年全广西的经济损失总计"
+→ aggregate_statistics(attribute="经济损失", aggregation="sum", time_range=["2020-01-01", "2020-12-31"])
 
-**多步推理示例**：
-- "2017年广西损失" → ① query_nl查事件 → ② aggregate统计 → 生成答案
-- "潘厂水库影响" → ① query_nl查水库状态 → ② find_causal_chain追踪 → 生成答案
+🔹 **因果链追踪问题**
+"潘厂水库2020年泄洪造成了什么影响？"
+推荐方案（两步法）：
+  ① query_knowledge_graph_with_nl(question="潘厂水库2020年6月的泄洪状态")
+  ② 从结果提取状态ID（如FS-F-450381-潘厂水库-20200607_20200607）
+  ③ find_causal_chain(start_event="FS-F-450381-潘厂水库-20200607_20200607", direction="forward", max_depth=3)
 
-**关键：每一步要有明确目的，不是为了查询而查询！**
+备用方案（如果时间不重要）：
+  → find_causal_chain(start_event="潘厂水库", direction="forward", max_depth=3)
+  说明：会返回所有时间的因果链，LLM需要人工筛选
+
+🔹 **对比分析问题**
+"比较2018和2019年南宁市和柳州市的受灾情况"
+→ compare_entities(
+    entity_names=["南宁市", "柳州市"], 
+    time_range=["2018-01-01", "2019-12-31"], 
+    compare_attributes=["受灾人口", "经济损失"]
+  )
+
+🔹 **时序趋势问题**
+"潘厂水库2019-2021年降雨量变化趋势"
+→ analyze_temporal_pattern(
+    entity_name="潘厂水库", 
+    start_date="2019-01-01", 
+    end_date="2021-12-31", 
+    metric="降雨量"
+  )
+
+🔹 **结构化筛选问题**
+"查找2023年来源于水旱灾害公报的所有事件"
+→ search_knowledge_graph(
+    category="事件",  # 查基础实体
+    document_source="2023年广西水旱灾害公报"
+  )
+  
+"查找2023年10月南宁市的所有状态（包含降雨、受灾数据）"
+→ search_knowledge_graph(
+    keyword="南宁",
+    category="State",  # 查状态节点！
+    time_range=["2023-10-01", "2023-10-31"]
+  )
+
+🔹 **空间关系问题**
+"查找南宁市周边的水库设施"
+→ get_spatial_neighbors(entity_name="南宁市", radius=2, neighbor_type="设施")
+
+🔹 **精确Cypher查询**（高级用户）
+"查询所有包含'潘厂水库'的状态节点"
+→ execute_cypher_query(cypher="MATCH (s:State) WHERE s.id CONTAINS '潘厂水库' RETURN s LIMIT 10")
+
+**工具选择决策树**
+
+```
+问题分析
+    ├─ 是否涉及时间？
+    │   ├─ 是 → 问题是否包含"具体事件+年份"？
+    │   │   ├─ 是（如"潘厂水库2020年影响"）→ 先用 query_nl 获取状态ID，再用 find_causal_chain
+    │   │   └─ 否（如"2017年广西损失"）→ 直接用 query_nl 或 aggregate_statistics
+    │   └─ 否 → 继续判断
+    │
+    ├─ 是否是对比分析？
+    │   ├─ 是（包含"比较"、"对比"、"vs"等）→ compare_entities
+    │   └─ 否 → 继续判断
+    │
+    ├─ 是否是因果关系？
+    │   ├─ 是（包含"导致"、"影响"、"原因"等）→ 
+    │   │   ├─ 有明确时间 → query_nl + find_causal_chain（两步法）
+    │   │   └─ 无时间限制 → 直接 find_causal_chain
+    │   └─ 否 → 继续判断
+    │
+    ├─ 是否是统计聚合？
+    │   ├─ 是（包含"总计"、"平均"、"最多"、"统计"等）→ aggregate_statistics
+    │   └─ 否 → 继续判断
+    │
+    ├─ 是否是趋势分析？
+    │   ├─ 是（包含"趋势"、"变化"、"增长"等）→ analyze_temporal_pattern
+    │   └─ 否 → 继续判断
+    │
+    ├─ 是否是空间关系？
+    │   ├─ 是（包含"周边"、"附近"、"邻近"等）→ get_spatial_neighbors
+    │   └─ 否 → 继续判断
+    │
+    ├─ 是否需要精确控制查询？
+    │   ├─ 是（问题复杂，query_nl多次失败）→ execute_cypher_query
+    │   └─ 否 → 使用 query_knowledge_graph_with_nl ⭐（万能工具）
+    │
+    └─ 是否有明确筛选条件？
+        ├─ 是（按类别、来源、地点筛选）→ search_knowledge_graph
+        │   ├─ 查基础实体（名称、位置）→ category='地点'/'设施'/'事件'
+        │   └─ 查时序数据（降雨、损失）→ category='State'
+        └─ 否 → 使用 query_knowledge_graph_with_nl ⭐
+```
+
+**快速参考表**
+
+| 关键词 | 推荐工具 | 注意事项 |
+|--------|---------|---------|
+| 损失、受灾、影响（无明确因果） | query_nl 或 aggregate | 自动覆盖所有State类型 |
+| 导致、造成、影响（有因果关系） | query_nl → find_causal_chain | ⚠️两步法！先获取状态ID |
+| 原因、溯源（反向因果） | find_causal_chain | direction="backward" |
+| 比较、对比 | compare_entities | 至少2个实体 |
+| 总计、平均、最大、最小 | aggregate_statistics | 明确aggregation类型 |
+| 趋势、变化 | analyze_temporal_pattern | 必须提供时间范围 |
+| 周边、附近、邻近 | get_spatial_neighbors | radius控制层级 |
+| 按来源/类别筛选（基础实体） | search(category='地点/设施/事件') | 查实体本身 |
+| 按时间/损失筛选（状态数据） | search(category='State') | ⚠️时间范围只对State有效 |
+| 复杂/模糊/多条件 | query_nl ⭐ | 最智能，优先使用 |
+
+**多步推理策略（重要！）**
+
+🎯 **何时需要多步？何时一步就够？**
+
+**一步到位场景**（直接调用一个工具即可）：
+- ✅ "2020年广西的洪涝事件" → query_nl
+- ✅ "南宁市2023年的受灾人口总数" → aggregate_statistics
+- ✅ "比较南宁和柳州" → compare_entities
+- ✅ "南宁市周边的设施" → get_spatial_neighbors
+
+**必须多步场景**（工具之间有依赖关系）：
+- ⚠️ "潘厂水库2020年泄洪的影响" → 
+  ① query_nl获取2020年状态ID → ② find_causal_chain追踪影响
+  原因：find_causal_chain不支持时间过滤
+  
+- ⚠️ "哪些事件导致了大规模受灾" → 
+  ① aggregate找到受灾人口最多的状态 → ② find_causal_chain追溯原因
+  原因：需要先识别"大规模"是哪些
+
+- ⚠️ "实体ID为L-450100的所有关系及其属性统计" →
+  ① get_entity_relations获取关系 → ② 针对关联实体调用aggregate
+  原因：需要先知道关联了哪些实体
+
+**可选多步场景**（一步可行，但多步更精确）：
+- 🔄 "2017年广西损失详情"
+  方案A：query_nl（一步，快速但可能不精确）
+  方案B：query_nl → aggregate（两步，更准确的统计）
+  建议：先尝试A，如果LLM判断需要精确统计再用B
+
+**禁止无效多步**（浪费资源）：
+- ❌ query_nl → query_nl（参数相同或相似）
+- ❌ search → query_nl（功能重复）
+- ❌ aggregate → aggregate（同一指标重复计算）
+- ❌ 连续3次调用同一工具（陷入循环）
+
+**智能决策规则**：
+1. ✅ **优先一步解决**：除非工具明确不支持某功能，否则先尝试一个工具
+2. ✅ **基于结果判断**：第一个工具返回数据后，判断是否足够回答
+3. ✅ **传递状态ID**：如果第一步获得了实体ID/状态ID，第二步要用上
+4. ⚠️ **最多2-3步**：超过3步说明策略有问题，应重新思考
+5. ⚠️ **空结果处理**：如果工具返回空，不要重复调用，换个角度或直接告知用户
+6. ❌ **禁止为了多步而多步**：不是步骤越多越好！
+
+**多步推理模板**：
+
+```
+场景1：因果链+时间限制
+用户问："潘厂水库2020年6月的泄洪造成了什么影响？"
+步骤1: query_nl(question="潘厂水库2020年6月的泄洪状态")
+步骤2: 提取state_id（如FS-F-450381-潘厂水库-20200607_20200607）
+步骤3: find_causal_chain(start_event="FS-F-450381-潘厂水库-20200607_20200607", direction="forward")
+
+场景2：先筛选再统计
+用户问："2019年导致经济损失超过1亿的事件有哪些？"
+步骤1: query_nl(question="2019年的灾害事件及经济损失")
+步骤2: LLM从结果中筛选损失>1亿的（无需再调工具）
+
+场景3：先定位再分析趋势
+用户问："受灾最严重的市在2018-2020年的趋势"
+步骤1: aggregate(attribute="受灾人口", aggregation="max", time_range=["2018-01-01","2020-12-31"], group_by="source")
+步骤2: 提取受灾最多的市名（如"南宁市"）
+步骤3: analyze_temporal_pattern(entity_name="南宁市", start_date="2018-01-01", end_date="2020-12-31")
+```
+
+**关键原则：每一步必须有明确的信息增益！不要为了查询而查询！**
 
 现在开始回答用户问题！"""
 
@@ -999,14 +1191,24 @@ def query():
                     # 检查数据是否非空
                     data = tool_result.get('data', {})
                     if isinstance(data, dict):
-                        # 检查是否有实质性内容
+                        # 检查是否有实质性内容（支持所有工具的返回字段）
                         if (data.get('entities') or data.get('query_results') or 
-                            data.get('nodes') or data.get('records') or
-                            data.get('total_results', 0) > 0):
+                            data.get('nodes') or data.get('records') or 
+                            data.get('chains') or data.get('neighbors') or 
+                            data.get('comparison') or data.get('result') or
+                            data.get('total_results', 0) > 0 or
+                            data.get('count', 0) > 0):
                             tool_has_data = True
                             current_iteration_has_result = True
                             total_valid_results += 1
-                            result_count = data.get('total_results', len(data.get('entities') or data.get('query_results') or data.get('nodes') or data.get('records') or []))
+                            # 计算记录数（优先使用count字段，然后尝试列表长度）
+                            result_count = (
+                                data.get('total_results') or 
+                                data.get('count') or 
+                                len(data.get('entities') or data.get('query_results') or 
+                                    data.get('nodes') or data.get('records') or 
+                                    data.get('chains') or data.get('neighbors') or [])
+                            )
                     elif isinstance(data, list) and len(data) > 0:
                         tool_has_data = True
                         current_iteration_has_result = True

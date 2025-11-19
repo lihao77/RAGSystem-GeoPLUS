@@ -42,17 +42,17 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_knowledge_graph",
-            "description": "搜索知识图谱中的实体、事件和状态信息。支持关键词、类别、时间范围、地理位置等多维度检索。适用于简单的筛选和查找任务。\n\n⚠️重要：查询损失数据时，不要只查'事件'类别！损失信息可能在State节点中（包括事件状态、地点状态、联合状态）。",
+            "description": "搜索知识图谱中的基础实体或状态节点。根据category参数自动选择查询目标。\n\n**基础实体vs状态节点**：\n- 基础实体（地点/设施/事件）：静态骨架，如'南宁市'、'潘厂水库'、'2023年台风'\n- 状态节点（State）：动态快照，包含时间段内的具体数据（降雨量、受灾人口、经济损失等）\n\n**查询策略**：\n- category='地点'/'设施'/'事件'：返回基础实体节点（:地点:entity, :设施:entity, :事件:entity）\n- category='State'：返回状态节点（:State），包含entity_ids、time、state_type等\n- category=''：默认查询状态节点\n\n⚠️重要：\n1. 查询损失数据时，必须用category='State'！损失信息存储在状态节点的属性中\n2. 查询基础实体信息（名称、位置）时，用category='地点'/'设施'/'事件'\n3. 时间范围(time_range)只对State节点有效",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "keyword": {
                         "type": "string",
-                        "description": "搜索关键词，用于模糊匹配实体名称，例如：'潘厂水库'、'南宁市'、'洪涝'"
+                        "description": "搜索关键词，用于模糊匹配。\n- 查基础实体：匹配name、id、geo_description字段\n- 查状态节点：先查关联的基础实体，再通过entity_ids匹配状态\n示例：'潘厂水库'、'南宁市'、'洪涝'、'450100'（行政区划码）"
                     },
                     "category": {
                         "type": "string",
-                        "description": "实体类别，可选值：'地点'、'设施'、'事件'、'State'（状态节点）",
+                        "description": "节点类别（决定查询哪类节点）：\n- '地点'：查询地点基础实体（行政区、河流等）\n- '设施'：查询设施基础实体（水库、大坝、水文站等）\n- '事件'：查询事件基础实体（台风、洪水等）\n- 'State'：查询状态节点（包含时序数据和属性）\n- ''（空）：默认查询State节点",
                         "enum": ["地点", "设施", "事件", "State", ""]
                     },
                     "document_source": {
@@ -89,13 +89,13 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_entity_relations",
-            "description": "获取指定实体的关系信息，包括该实体的所有连接关系、关联实体等。",
+            "description": "获取指定基础实体的关系网络。支持查询空间关系、状态链、因果关系等。\n\n**返回的关系类型**：\n1. **空间结构关系**（基础实体之间）：\n   - `locatedIn`：地点层级关系（市→省）、设施归属（水库→县）\n   - `occurredAt`：事件发生地（台风→影响区域）\n\n2. **状态链关系**（基础实体→状态）：\n   - `hasState`：实体的首个状态节点\n   - `nextState`：状态的时间序列链（自动展开）\n\n3. **因果关系**（状态之间）：\n   - `hasRelation {type:'导致'}`：直接因果\n   - `hasRelation {type:'间接导致'}`：调制作用\n   - `hasRelation {type:'触发'}`：阈值触发\n\n**使用场景**：\n- 查看某个地点的上下级行政区\n- 查看某个设施所在位置\n- 查看某个实体的历史状态链\n- 探索因果关系网络",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "entity_id": {
                         "type": "string",
-                        "description": "实体ID，例如：'L-450100'（南宁市）、'F-450381-潘厂水库'"
+                        "description": "基础实体ID（必须是:entity节点的ID）：\n- 地点：'L-450100'（南宁市）、'L-450103>新竹街道'、'L-RIVER-长江'\n- 设施：'F-450381-潘厂水库'、'F-420500-三峡大坝'\n- 事件：'E-450000-20231001-TYPHOON'\n\n⚠️注意：不支持State节点ID（ES-*/LS-*/FS-*/JS-*）"
                     }
                 },
                 "required": ["entity_id"]

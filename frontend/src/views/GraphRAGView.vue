@@ -1,123 +1,447 @@
 <template>
   <div class="graphrag-container">
-    <div class="controls">
-      <el-input 
-        v-model="question" 
-        placeholder="输入你的问题，例如：查询广西2020年洪水事件" 
-        type="textarea" 
-        :rows="3"
-        @keydown.ctrl.enter="sendQuestion"
-      />
-      <div class="actions">
-        <el-button type="primary" @click="sendQuestion" :loading="loading" :disabled="!question.trim()">
-          <el-icon><Search /></el-icon>
-          发送 (Ctrl+Enter)
-        </el-button>
-        <el-button @click="fetchSchema">
-          <el-icon><DataAnalysis /></el-icon>
-          图谱结构
-        </el-button>
-        <el-button @click="clear">
-          <el-icon><Delete /></el-icon>
-          清空
-        </el-button>
-      </div>
-    </div>
-
-    <div class="chat-and-results">
-      <div class="chat-panel">
-        <div class="panel-header">
-          <h3><el-icon><ChatDotRound /></el-icon> 对话历史</h3>
-          <el-tag v-if="messages.length > 0" size="small">{{ messages.length }} 条消息</el-tag>
-        </div>
-        <div class="chat-content">
-          <div v-if="messages.length === 0" class="empty-state">
-            <el-icon size="48"><ChatDotRound /></el-icon>
-            <p>开始提问，探索知识图谱...</p>
-          </div>
-          <div v-for="(m, idx) in messages" :key="idx" class="message" :class="m.role">
-            <div class="message-header">
-              <el-avatar :size="32" :style="{ background: m.role === 'user' ? '#409eff' : '#67c23a' }">
-                {{ m.role === 'user' ? '我' : 'AI' }}
-              </el-avatar>
-              <span class="role">{{ m.role === 'user' ? '用户' : 'AI 助手' }}</span>
-            </div>
-            <div class="content" v-html="formatContent(m.content)"></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="results-panel">
-        <div class="panel-header">
-          <h3><el-icon><DocumentCopy /></el-icon> 技术详情</h3>
-        </div>
-        <div class="results-content">
-          <!-- <el-collapse v-model="activeNames" accordion> -->
-          <el-collapse v-model="activeNames">
-            <el-collapse-item name="0">
-              <template #title>
-                <div class="collapse-title">
+    <!-- 主内容区 - 2列布局 -->
+    <div class="main-content">
+      <!-- 对话区 -->
+      <div class="chat-column">
+        <el-scrollbar class="chat-scrollbar" ref="chatScrollbar">
+          <div class="chat-container">
+            <!-- 欢迎消息 -->
+            <div v-if="messages.length === 0" class="welcome-message">
+              <div class="welcome-icon">
+                <el-icon :size="48"><ChatDotRound /></el-icon>
+              </div>
+              <h2>时空知识图谱问答系统</h2>
+              <p>基于广西水旱灾害的智能问答助手</p>
+              <div class="welcome-hints">
+                <div class="hint-item">
+                  <el-icon><Clock /></el-icon>
+                  <span>时序推理</span>
+                </div>
+                <div class="hint-item">
+                  <el-icon><MapLocation /></el-icon>
+                  <span>空间分析</span>
+                </div>
+                <div class="hint-item">
                   <el-icon><Share /></el-icon>
-                  <span>知识图谱</span>
-                  <el-tag v-if="graphData.nodes.length > 0" size="small" type="success">
-                    {{ graphData.nodes.length }} 节点
+                  <span>因果追踪</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- 对话消息流 -->
+            <div class="messages-flow">
+              <template v-for="(msg, idx) in messages" :key="idx">
+                <!-- 用户消息 -->
+                <div v-if="msg.role === 'user'" class="message-item user-message">
+                  <div class="message-content">
+                    <div class="message-avatar">
+                      <el-avatar :size="32" style="background: #409eff;">
+                        <el-icon><User /></el-icon>
+                      </el-avatar>
+                    </div>
+                    <div class="message-bubble user-bubble">
+                      <div class="message-text">{{ msg.content }}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- AI 消息 -->
+                <div v-if="msg.role === 'assistant'" class="message-item assistant-message">
+                  <div class="message-content">
+                    <div class="message-avatar">
+                      <el-avatar :size="32" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                        <el-icon><Cpu /></el-icon>
+                      </el-avatar>
+                    </div>
+                    <div class="message-bubble assistant-bubble">
+                      <!-- 工具调用过程（如果有） -->
+                      <div v-if="getMessageTools(idx).length > 0" class="tool-calls-section">
+                        <div class="section-header" @click="toggleMessageTools(idx)">
+                          <el-icon><Operation /></el-icon>
+                          <span>推理过程</span>
+                          <el-tag size="small" type="info">{{ getMessageTools(idx).length }} 步</el-tag>
+                          <el-icon class="toggle-icon" :class="{ expanded: isMessageToolsExpanded(idx) }">
+                            <ArrowDown />
+                          </el-icon>
+                        </div>
+                        <div v-show="isMessageToolsExpanded(idx)" class="tool-calls-list">
+                          <div 
+                            v-for="(tool, tIdx) in getMessageTools(idx)" 
+                            :key="tIdx"
+                            class="tool-call-card"
+                          >
+                            <div class="tool-header">
+                              <div class="tool-step">
+                                <span class="step-badge">{{ tIdx + 1 }}</span>
+                                <span class="tool-name">{{ getToolDisplayName(tool.name) }}</span>
+                              </div>
+                              <el-tag 
+                                size="small" 
+                                :type="tool.result?.success ? 'success' : 'danger'"
+                              >
+                                {{ tool.result?.success ? '成功' : '失败' }}
+                              </el-tag>
+                            </div>
+                            
+                            <!-- 工具详情可展开 -->
+                            <el-collapse accordion class="tool-details-collapse">
+                              <el-collapse-item>
+                                <template #title>
+                                  <span class="collapse-trigger">
+                                    <el-icon><View /></el-icon>
+                                    查看详情
+                                  </span>
+                                </template>
+                                
+                                <div class="tool-detail-content">
+                                  <!-- 参数 -->
+                                  <div v-if="tool.arguments" class="detail-block">
+                                    <div class="block-label">📋 输入参数</div>
+                                    <div class="param-tags">
+                                      <el-tag 
+                                        v-for="(val, key) in formatToolArgs(tool.arguments)" 
+                                        :key="key"
+                                        size="small"
+                                      >
+                                        {{ key }}: {{ val }}
+                                      </el-tag>
+                                    </div>
+                                  </div>
+
+                                  <!-- Cypher -->
+                                  <div v-if="tool.result?.data?.cypher" class="detail-block">
+                                    <div class="block-label">
+                                      💻 Cypher 查询
+                                      <el-button 
+                                        size="small" 
+                                        text 
+                                        type="primary"
+                                        @click="copyCypher(tool.result.data.cypher)"
+                                      >
+                                        <el-icon><DocumentCopy /></el-icon>
+                                        复制
+                                      </el-button>
+                                    </div>
+                                    <pre class="code-block">{{ tool.result.data.cypher }}</pre>
+                                  </div>
+
+                                  <!-- 结果 -->
+                                  <div v-if="getToolResults(tool).length > 0" class="detail-block">
+                                    <div class="block-label">
+                                      📊 返回结果
+                                      <el-tag size="small" type="success">
+                                        {{ getToolResults(tool).length }} 条
+                                      </el-tag>
+                                    </div>
+                                    <div class="results-preview">
+                                      {{ JSON.stringify(getToolResults(tool).slice(0, 2), null, 2) }}
+                                      <span v-if="getToolResults(tool).length > 2" class="more-indicator">
+                                        ... 还有 {{ getToolResults(tool).length - 2 }} 条
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <!-- 图谱数据 -->
+                                  <div v-if="getToolGraphData(tool)" class="detail-block">
+                                    <div class="block-label">🌐 图谱数据</div>
+                                    <div class="graph-stats">
+                                      <span>{{ getToolGraphData(tool).nodes?.length || 0 }} 节点</span>
+                                      <span>{{ getToolGraphData(tool).relationships?.length || 0 }} 关系</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </el-collapse-item>
+                            </el-collapse>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- AI 回答 -->
+                      <div class="answer-section">
+                        <div class="message-text" v-html="formatContent(msg.content)"></div>
+                      </div>
+
+                      <!-- 消息元信息 -->
+                      <div class="message-meta">
+                        <span class="meta-time">{{ formatTime(msg.timestamp) }}</span>
+                        <el-button 
+                          text 
+                          size="small"
+                          @click="copyText(msg.content)"
+                        >
+                          <el-icon><DocumentCopy /></el-icon>
+                          复制
+                        </el-button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </template>
+
+              <!-- 加载中 -->
+              <div v-if="loading" class="message-item assistant-message">
+                <div class="message-content">
+                  <div class="message-avatar">
+                    <el-avatar :size="32" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                      <el-icon><Cpu /></el-icon>
+                    </el-avatar>
+                  </div>
+                  <div class="message-bubble assistant-bubble">
+                    <div class="typing-indicator">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </el-scrollbar>
+
+        <!-- 输入区 - 固定在底部 -->
+        <div class="chat-input-section">
+          <div class="input-container">
+            <!-- 示例查询快捷按钮 -->
+            <div v-if="messages.length === 0 && exampleQuestions.length > 0" class="example-chips">
+              <div 
+                v-for="(example, idx) in exampleQuestions.slice(0, 3)" 
+                :key="idx"
+                class="example-chip"
+                @click="selectExample(example.question)"
+              >
+                <el-icon><Lightning /></el-icon>
+                {{ example.label }}
+              </div>
+            </div>
+
+            <!-- 主输入框 -->
+            <div class="input-wrapper">
+              <div class="input-box" :class="{ focused: inputFocused, hasContent: question.trim() }">
+                <textarea
+                  ref="inputTextarea"
+                  v-model="question"
+                  class="message-input"
+                  placeholder="向时空知识图谱提问..."
+                  rows="1"
+                  :disabled="loading"
+                  @focus="inputFocused = true"
+                  @blur="inputFocused = false"
+                  @input="adjustTextareaHeight"
+                  @keydown.enter.exact.prevent="sendQuestion"
+                  @keydown.enter.shift.exact="newLine"
+                ></textarea>
+                
+                <div class="input-actions">
+                  <!-- 更多选项按钮 -->
+                  <el-popover
+                    placement="top-start"
+                    :width="280"
+                    trigger="click"
+                  >
+                    <template #reference>
+                      <button class="action-btn icon-btn" title="示例查询">
+                        <el-icon><Menu /></el-icon>
+                      </button>
+                    </template>
+                    <div class="examples-menu">
+                      <div class="menu-title">示例查询</div>
+                      <div 
+                        v-for="(example, idx) in exampleQuestions"
+                        :key="idx"
+                        class="menu-item"
+                        @click="selectExample(example.question)"
+                      >
+                        <div class="item-label">{{ example.label }}</div>
+                        <div class="item-type">{{ example.typeLabel }}</div>
+                      </div>
+                    </div>
+                  </el-popover>
+
+                  <!-- 清空按钮 -->
+                  <button 
+                    v-if="messages.length > 0"
+                    class="action-btn icon-btn" 
+                    title="清空对话"
+                    @click="clear"
+                  >
+                    <el-icon><Delete /></el-icon>
+                  </button>
+
+                  <!-- 发送按钮 -->
+                  <button 
+                    class="action-btn send-btn"
+                    :class="{ active: question.trim() && !loading }"
+                    :disabled="!question.trim() || loading"
+                    @click="sendQuestion"
+                    title="发送 (Enter)"
+                  >
+                    <el-icon v-if="loading">
+                      <Loading />
+                    </el-icon>
+                    <el-icon v-else>
+                      <Promotion />
+                    </el-icon>
+                  </button>
+                </div>
+              </div>
+              
+              <!-- 提示信息 -->
+              <div class="input-hint">
+                <span class="hint-text">
+                  <kbd>Enter</kbd> 发送
+                  <span class="hint-divider">·</span>
+                  <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右列：推理详情 -->
+      <div v-if="toolCalls.length > 0" class="right-column" :class="{ collapsed: sidebarCollapsed }">
+        <div class="sidebar-toggle" @click="sidebarCollapsed = !sidebarCollapsed">
+          <el-icon>
+            <DArrowLeft v-if="sidebarCollapsed" />
+            <DArrowRight v-else />
+          </el-icon>
+        </div>
+        <div v-show="!sidebarCollapsed" class="sidebar-content">
+          <el-collapse v-model="activeNames" class="detail-collapse">
+          <!-- 推理过程 -->
+          <el-collapse-item name="1">
+              <template #title>
+                <div class="collapse-head">
+                  <el-icon><Operation /></el-icon>
+                  <span>推理过程</span>
+                  <el-tag size="small" type="info">{{ toolCalls.length }} 步</el-tag>
+                </div>
+              </template>
+              <div class="collapse-body">
+                <el-collapse v-model="expandedSteps" accordion>
+                  <el-collapse-item 
+                    v-for="(tool, idx) in toolCalls" 
+                    :key="idx"
+                    :name="String(idx)"
+                  >
+                    <template #title>
+                      <div class="step-header">
+                        <div class="step-index-inline">{{ idx + 1 }}</div>
+                        <div class="step-name-inline">
+                          {{ getToolDisplayName(tool.name) }}
+                        </div>
+                        <el-tag 
+                          v-if="hasToolData(tool)" 
+                          size="small" 
+                          :type="getToolDataType(tool)"
+                        >
+                          {{ getToolDataSummary(tool) }}
+                        </el-tag>
+                      </div>
+                    </template>
+                    <div class="step-details">
+                      <!-- 参数 -->
+                      <div class="detail-section" v-if="tool.arguments && Object.keys(tool.arguments).length > 0">
+                        <div class="detail-label">📋 输入参数</div>
+                        <div class="detail-content">
+                          <el-tag 
+                            v-for="(val, key) in formatToolArgs(tool.arguments)" 
+                            :key="key"
+                            size="small"
+                            style="margin: 2px;"
+                          >
+                            {{ key }}: {{ val }}
+                          </el-tag>
+                        </div>
+                      </div>
+                      
+                      <!-- Cypher 查询 -->
+                      <div 
+                        class="detail-section" 
+                        v-if="tool.result && tool.result.data && tool.result.data.cypher"
+                      >
+                        <div class="detail-label">
+                          💻 Cypher 查询
+                          <el-button 
+                            size="small" 
+                            text 
+                            @click="copyCypher(tool.result.data.cypher)"
+                          >
+                            复制
+                          </el-button>
+                        </div>
+                        <pre class="code-display-inline">{{ tool.result.data.cypher }}</pre>
+                      </div>
+                      
+                      <!-- 查询结果 -->
+                      <div 
+                        class="detail-section" 
+                        v-if="getToolResults(tool).length > 0"
+                      >
+                        <div class="detail-label">
+                          📊 查询结果
+                          <el-tag size="small" type="success">
+                            {{ getToolResults(tool).length }} 条
+                          </el-tag>
+                        </div>
+                        <pre class="code-display-inline">{{ JSON.stringify(getToolResults(tool), null, 2) }}</pre>
+                      </div>
+                      
+                      <!-- 图谱数据 -->
+                      <div 
+                        class="detail-section" 
+                        v-if="getToolGraphData(tool)"
+                      >
+                        <div class="detail-label">
+                          🌐 图谱数据
+                          <el-tag size="small" type="success">
+                            {{ getToolGraphData(tool).nodes?.length || 0 }} 节点 / 
+                            {{ getToolGraphData(tool).relationships?.length || 0 }} 关系
+                          </el-tag>
+                        </div>
+                      </div>
+                      
+                      <!-- 状态 -->
+                      <div class="detail-section">
+                        <el-tag 
+                          :type="tool.result?.success ? 'success' : 'danger'"
+                          size="small"
+                        >
+                          {{ tool.result?.success ? '✓ 执行成功' : '✗ 执行失败' }}
+                        </el-tag>
+                      </div>
+                    </div>
+                  </el-collapse-item>
+                </el-collapse>
+              </div>
+            </el-collapse-item>
+
+            <!-- 汇总统计 -->
+            <el-collapse-item name="2" v-if="lastCypher || lastResults.length > 0">
+              <template #title>
+                <div class="collapse-head">
+                  <el-icon><DataAnalysis /></el-icon>
+                  <span>汇总统计</span>
+                  <el-tag v-if="lastResults.length > 0" size="small" type="info">
+                    总计 {{ lastResults.length }} 条结果
                   </el-tag>
                 </div>
               </template>
-              <div v-if="graphData.nodes.length > 0" class="graph-wrapper">
-                <div class="graph-debug">
-                  <el-button size="small" @click="renderGraph">刷新图谱</el-button>
-                  <span style="margin-left: 10px; font-size: 12px; color: #999;">
-                    {{ graphData.nodes.length }} 节点, {{ graphData.links.length }} 关系
-                  </span>
-                </div>
-                <div ref="graphContainer" class="graph-container"></div>
-                <div class="graph-legend">
-                  <el-tag size="small">节点: {{ graphData.nodes.length }}</el-tag>
-                  <el-tag size="small" type="info">关系: {{ graphData.links.length }}</el-tag>
+              <div class="collapse-body">
+                <div class="summary-stats">
+                  <el-descriptions :column="2" border size="small">
+                    <el-descriptions-item label="工具调用">{{ toolCalls.length }} 个</el-descriptions-item>
+                    <el-descriptions-item label="查询结果">{{ lastResults.length }} 条</el-descriptions-item>
+                    <el-descriptions-item label="图谱节点">{{ graphData.nodes.length }} 个</el-descriptions-item>
+                    <el-descriptions-item label="图谱关系">{{ graphData.links.length }} 个</el-descriptions-item>
+                    <el-descriptions-item label="Cypher查询" :span="2">
+                      {{ lastCypher ? '已生成' : '无' }}
+                    </el-descriptions-item>
+                  </el-descriptions>
                 </div>
               </div>
-              <el-empty v-else description="暂无图谱数据" :image-size="60" />
-            </el-collapse-item>
-            
-            <el-collapse-item name="1">
-              <template #title>
-                <div class="collapse-title">
-                  <el-icon><Document /></el-icon>
-                  <span>生成的 Cypher</span>
-                  <el-tag v-if="lastCypher" size="small" type="success">已生成</el-tag>
-                </div>
-              </template>
-              <pre v-if="lastCypher" class="cypher">{{ lastCypher }}</pre>
-              <el-empty v-else description="暂无 Cypher 查询" :image-size="60" />
-            </el-collapse-item>
-            
-            <el-collapse-item name="2">
-              <template #title>
-                <div class="collapse-title">
-                  <el-icon><DataLine /></el-icon>
-                  <span>查询结果</span>
-                  <el-tag v-if="lastResults.length > 0" size="small" type="info">{{ lastResults.length }} 条</el-tag>
-                </div>
-              </template>
-              <div v-if="lastResults.length > 0" class="results-wrapper">
-                <pre class="results-json">{{ lastResultsStr }}</pre>
-              </div>
-              <el-empty v-else description="暂无查询结果" :image-size="60" />
-            </el-collapse-item>
-            
-            <el-collapse-item name="3">
-              <template #title>
-                <div class="collapse-title">
-                  <el-icon><Connection /></el-icon>
-                  <span>图谱结构</span>
-                  <el-tag v-if="schema" size="small" type="warning">已加载</el-tag>
-                </div>
-              </template>
-              <div v-if="schema" class="schema-wrapper">
-                <pre class="schema">{{ schemaStr }}</pre>
-              </div>
-              <el-empty v-else description="点击按钮获取图谱结构" :image-size="60" />
             </el-collapse-item>
           </el-collapse>
         </div>
@@ -130,7 +454,13 @@
 import { ref, computed, nextTick, watch } from 'vue';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { Search, DataAnalysis, Delete, ChatDotRound, DocumentCopy, Document, DataLine, Connection, Share } from '@element-plus/icons-vue';
+import { ElMessage } from 'element-plus';
+import { 
+  Search, DataAnalysis, Delete, ChatDotRound, DocumentCopy, Document, DataLine, 
+  Connection, Share, Clock, MapLocation, Memo, Refresh, Tools, Operation, 
+  Tickets, Edit, Position, RefreshLeft, User, Cpu, Grid, CircleCheck, ChatLineRound, View,
+  ArrowDown, DArrowLeft, DArrowRight, Lightning, Menu, Loading, Promotion
+} from '@element-plus/icons-vue';
 import ForceGraph from 'force-graph';
 import * as graphragService from '../api/graphragService';
 
@@ -143,13 +473,22 @@ marked.setOptions({
 });
 
 const question = ref('');
+const selectedExample = ref('');
 const loading = ref(false);
 const messages = ref([]);
 const lastCypher = ref('');
 const lastResults = ref([]);
 const schema = ref(null);
-const activeNames = ref(['0', '1', '2', '3']); // 默认展开所有面板
+const activeNames = ref([]); // 默认全部折叠
+const expandedSteps = ref(''); // 展开的推理步骤
 const graphContainer = ref(null);
+const chatScrollbar = ref(null);
+const inputTextarea = ref(null);
+const inputFocused = ref(false);
+const toolCalls = ref([]); // 工具调用记录
+const messageToolsMap = ref({}); // 消息和工具调用的映射
+const expandedMessageTools = ref({}); // 展开的消息推理过程
+const sidebarCollapsed = ref(false); // 右侧边栏折叠状态
 let graphInstance = null;
 
 // 图谱数据
@@ -157,6 +496,40 @@ const graphData = ref({
   nodes: [],
   links: []
 });
+
+// 示例问题
+const exampleQuestions = ref([
+  { 
+    type: 'temporal', 
+    typeLabel: '时序分析',
+    label: '2020年潘厂水库的时序演化', 
+    question: '2020年潘厂水库发生了什么，请展示完整的时序演化过程' 
+  },
+  { 
+    type: 'causal', 
+    typeLabel: '统计分析',
+    label: '2017年7月广西灾害损失', 
+    question: '2017年7月广西因灾害导致的经济损失和人员伤亡情况' 
+  },
+  { 
+    type: 'causal', 
+    typeLabel: '因果追踪',
+    label: '潘厂水库泄洪影响链', 
+    question: '潘厂水库2020年泄洪造成了什么影响？追踪完整的因果链' 
+  },
+  { 
+    type: 'spatial', 
+    typeLabel: '空间关联',
+    label: '南宁市周边地区灾害', 
+    question: '查询南宁市及其周边地区在2023年的灾害关联关系' 
+  },
+  { 
+    type: 'temporal', 
+    typeLabel: '时序对比',
+    label: '2018-2019年度对比', 
+    question: '对比2018年和2019年广西的受灾情况' 
+  }
+]);
 
 const lastResultsStr = computed(() => {
   try {
@@ -336,47 +709,364 @@ watch(() => graphData.value.nodes.length, () => {
   }
 });
 
-// 监听面板展开
-watch(activeNames, (newVal) => {
-  if (newVal.includes('0') && graphData.value.nodes.length > 0) {
-    nextTick(() => {
-      renderGraph();
-    });
+// 选择示例
+function onExampleSelect(value) {
+  if (value) {
+    question.value = value;
+    selectedExample.value = '';
   }
-});
+}
+
+// 选择示例（新方法）
+function selectExample(exampleQuestion) {
+  question.value = exampleQuestion;
+  selectedExample.value = '';
+  nextTick(() => {
+    adjustTextareaHeight();
+    if (inputTextarea.value) {
+      inputTextarea.value.focus();
+    }
+  });
+}
+
+// 自动调整输入框高度
+function adjustTextareaHeight() {
+  if (!inputTextarea.value) return;
+  inputTextarea.value.style.height = 'auto';
+  const scrollHeight = inputTextarea.value.scrollHeight;
+  const maxHeight = 200; // 最大高度
+  inputTextarea.value.style.height = Math.min(scrollHeight, maxHeight) + 'px';
+}
+
+// 换行
+function newLine() {
+  question.value += '\n';
+  nextTick(() => {
+    adjustTextareaHeight();
+  });
+}
+
+// 获取工具显示名称
+function getToolDisplayName(toolName) {
+  const nameMap = {
+    'query_knowledge_graph_with_nl': '自然语言查询',
+    'search_knowledge_graph': '知识图谱搜索',
+    'get_entity_relations': '关系探索',
+    'analyze_temporal_pattern': '时序分析',
+    'find_causal_chain': '因果链追踪',
+    'compare_entities': '实体对比',
+    'aggregate_statistics': '统计聚合',
+    'get_spatial_neighbors': '空间邻近查询',
+    'get_graph_schema': '图谱结构查询'
+  };
+  return nameMap[toolName] || toolName;
+}
+
+// 获取工具标签
+function getToolLabel(toolName) {
+  const labels = {
+    'query_knowledge_graph_with_nl': 'NL查询',
+    'search_knowledge_graph': '搜索',
+    'analyze_temporal_pattern': '时序',
+    'find_causal_chain': '因果',
+    'compare_entities': '对比',
+    'aggregate_statistics': '统计',
+    'get_spatial_neighbors': '空间'
+  };
+  return labels[toolName] || '工具';
+}
+
+// 获取工具颜色
+function getToolColor(toolName) {
+  const colorMap = {
+    'query_knowledge_graph_with_nl': '#409eff',
+    'search_knowledge_graph': '#67c23a',
+    'analyze_temporal_pattern': '#e6a23c',
+    'find_causal_chain': '#f56c6c',
+    'compare_entities': '#909399',
+    'aggregate_statistics': '#5cb87a'
+  };
+  return colorMap[toolName] || '#409eff';
+}
+
+// 格式化工具参数
+function formatToolArgs(args) {
+  if (!args) return {};
+  const formatted = {};
+  for (const [key, val] of Object.entries(args)) {
+    if (Array.isArray(val)) {
+      formatted[key] = val.join(', ');
+    } else if (typeof val === 'object') {
+      formatted[key] = JSON.stringify(val);
+    } else {
+      formatted[key] = String(val).substring(0, 50);
+    }
+  }
+  return formatted;
+}
+
+// 判断工具是否有数据
+function hasToolData(tool) {
+  if (!tool.result || !tool.result.data) return false;
+  const data = tool.result.data;
+  return !!(data.cypher || data.query_results || data.results || data.records || data.graph_data || data.graph);
+}
+
+// 获取工具数据类型标签
+function getToolDataType(tool) {
+  if (!tool.result || !tool.result.success) return 'danger';
+  const data = tool.result.data;
+  if (data.graph_data || data.graph) return 'success';
+  if (data.cypher) return 'primary';
+  return 'info';
+}
+
+// 获取工具数据摘要
+function getToolDataSummary(tool) {
+  if (!tool.result || !tool.result.data) return '';
+  const data = tool.result.data;
+  
+  const parts = [];
+  if (data.cypher) parts.push('Cypher');
+  if (data.query_results || data.results || data.records) {
+    const count = (data.query_results || data.results || data.records).length;
+    parts.push(`${count}条结果`);
+  }
+  if (data.graph_data || data.graph) {
+    const graph = data.graph_data || data.graph;
+    const nodeCount = graph.nodes?.length || 0;
+    if (nodeCount > 0) parts.push(`${nodeCount}节点`);
+  }
+  
+  return parts.join(' / ') || '已完成';
+}
+
+// 获取工具的查询结果
+function getToolResults(tool) {
+  if (!tool.result || !tool.result.data) return [];
+  const data = tool.result.data;
+  return data.query_results || data.results || data.records || [];
+}
+
+// 获取工具的图谱数据
+function getToolGraphData(tool) {
+  if (!tool.result || !tool.result.data) return null;
+  const data = tool.result.data;
+  return data.graph_data || data.graph || null;
+}
+
+// 复制 Cypher
+function copyCypher(cypher) {
+  copyToClipboard(cypher);
+}
+
+// 复制文本
+function copyText(text) {
+  // 移除HTML标签
+  const div = document.createElement('div');
+  div.innerHTML = text;
+  const plainText = div.textContent || div.innerText || text;
+  copyToClipboard(plainText);
+}
+
+// 通用复制函数
+function copyToClipboard(text) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => {
+      ElMessage.success('已复制到剪贴板');
+    }).catch(() => {
+      ElMessage.error('复制失败');
+    });
+  } else {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+    ElMessage.success('已复制到剪贴板');
+  }
+}
+
+// 获取消息关联的工具调用
+function getMessageTools(messageIndex) {
+  return messageToolsMap.value[messageIndex] || [];
+}
+
+// 切换消息推理过程展开状态
+function toggleMessageTools(messageIndex) {
+  expandedMessageTools.value[messageIndex] = !expandedMessageTools.value[messageIndex];
+}
+
+// 检查消息推理过程是否展开
+function isMessageToolsExpanded(messageIndex) {
+  return expandedMessageTools.value[messageIndex] !== false; // 默认展开
+}
+
+// 格式化时间
+function formatTime(timestamp) {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diff = now - date;
+  
+  if (diff < 60000) return '刚刚';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
+  
+  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+}
+
+// 滚动到底部
+function scrollToBottom() {
+  if (chatScrollbar.value) {
+    const scrollEl = chatScrollbar.value.$refs.wrap$;
+    if (scrollEl) {
+      scrollEl.scrollTop = scrollEl.scrollHeight;
+    }
+  }
+}
 
 async function sendQuestion() {
   if (!question.value || loading.value) return;
-  messages.value.push({ role: 'user', content: question.value });
+  
+  const userMessage = {
+    role: 'user',
+    content: question.value,
+    timestamp: new Date()
+  };
+  messages.value.push(userMessage);
+  
+  // 滚动到底部
+  nextTick(() => {
+    scrollToBottom();
+  });
+  
   loading.value = true;
   try {
     const resp = await graphragService.queryGraphRAG(question.value, messages.value);
-    console.log('API 响应:', resp);
+    console.log('=== API 完整响应 ===', resp);
     
-    if (resp && resp.data && resp.success) {
+    if (resp && resp.success) {
       const d = resp.data;
-      messages.value.push({ role: 'assistant', content: d.answer });
-      lastCypher.value = d.cypher || '';
-      lastResults.value = d.query_results || [];
+      console.log('=== 响应数据 ===', d);
       
-      // 使用后端返回的图谱数据
-      console.log('图谱原始数据:', d.graph_data);
-      if (d.graph_data) {
-        graphData.value = extractGraphData(d.graph_data);
-        console.log('提取后的图谱数据:', graphData.value);
+      // AI回答
+      if (d.answer) {
+        const assistantMessage = {
+          role: 'assistant',
+          content: d.answer,
+          timestamp: new Date()
+        };
+        messages.value.push(assistantMessage);
         
-        if (graphData.value.nodes.length > 0) {
-          activeNames.value = ['0'];
-          // 等待 DOM 更新后再渲染
-          nextTick(() => {
-            setTimeout(() => {
-              renderGraph();
-            }, 100);
-          });
+        // 关联工具调用到这条消息
+        if (d.tool_calls && d.tool_calls.length > 0) {
+          messageToolsMap.value[messages.value.length - 1] = d.tool_calls;
         }
+        
+        // 滚动到底部
+        nextTick(() => {
+          scrollToBottom();
+        });
       }
+      
+      // 初始化
+      lastCypher.value = '';
+      lastResults.value = [];
+      
+      // 工具调用
+      if (d.tool_calls && Array.isArray(d.tool_calls)) {
+        toolCalls.value = d.tool_calls;
+        console.log('✅ 工具调用已提取:', toolCalls.value.length, '个');
+        
+        // 从工具调用结果中提取 Cypher、查询结果和图谱数据
+        let allGraphData = { nodes: [], relationships: [] };
+        let allResults = [];
+        
+        d.tool_calls.forEach((toolCall, idx) => {
+          console.log(`--- 工具 ${idx + 1}: ${toolCall.name} ---`);
+          
+          if (toolCall.result && toolCall.result.success && toolCall.result.data) {
+            const toolData = toolCall.result.data;
+            
+            // 提取 Cypher（如果有）
+            if (toolData.cypher && !lastCypher.value) {
+              lastCypher.value = toolData.cypher;
+              console.log('✅ 从工具结果提取 Cypher');
+            }
+            
+            // 提取查询结果
+            if (toolData.query_results && Array.isArray(toolData.query_results)) {
+              allResults = allResults.concat(toolData.query_results);
+              console.log(`✅ 从工具提取 ${toolData.query_results.length} 条结果`);
+            } else if (toolData.results && Array.isArray(toolData.results)) {
+              allResults = allResults.concat(toolData.results);
+              console.log(`✅ 从工具提取 ${toolData.results.length} 条结果`);
+            } else if (toolData.records && Array.isArray(toolData.records)) {
+              allResults = allResults.concat(toolData.records);
+              console.log(`✅ 从工具提取 ${toolData.records.length} 条记录`);
+            }
+            
+            // 提取图谱数据
+            if (toolData.graph_data) {
+              if (toolData.graph_data.nodes) {
+                allGraphData.nodes = allGraphData.nodes.concat(toolData.graph_data.nodes);
+              }
+              if (toolData.graph_data.relationships) {
+                allGraphData.relationships = allGraphData.relationships.concat(toolData.graph_data.relationships);
+              }
+              console.log(`✅ 从工具提取图谱: ${toolData.graph_data.nodes?.length || 0} 节点`);
+            } else if (toolData.graph) {
+              if (toolData.graph.nodes) {
+                allGraphData.nodes = allGraphData.nodes.concat(toolData.graph.nodes);
+              }
+              if (toolData.graph.relationships) {
+                allGraphData.relationships = allGraphData.relationships.concat(toolData.graph.relationships);
+              }
+              console.log(`✅ 从工具提取图谱: ${toolData.graph.nodes?.length || 0} 节点`);
+            }
+          }
+        });
+        
+        // 设置查询结果
+        if (allResults.length > 0) {
+          lastResults.value = allResults;
+          console.log('✅ 总计查询结果:', allResults.length, '条');
+        }
+        
+        // 设置图谱数据
+        if (allGraphData.nodes.length > 0) {
+          console.log('=== 合并后的图谱数据 ===', {
+            nodes: allGraphData.nodes.length,
+            relationships: allGraphData.relationships.length
+          });
+          
+          graphData.value = extractGraphData(allGraphData);
+          console.log('✅ 图谱已提取:', graphData.value.nodes.length, '节点,', graphData.value.links.length, '关系');
+          
+          if (graphData.value.nodes.length > 0) {
+            nextTick(() => {
+              setTimeout(() => {
+                renderGraph();
+              }, 100);
+            });
+          }
+        } else {
+          console.warn('⚠️ 未从工具调用中提取到图谱数据');
+          graphData.value = { nodes: [], links: [] };
+        }
+        
+      } else {
+        console.warn('⚠️ 未找到tool_calls字段');
+        toolCalls.value = [];
+        graphData.value = { nodes: [], links: [] };
+      }
+      
     } else {
-      messages.value.push({ role: 'assistant', content: '请求失败：' + (resp.data && resp.data.message ? resp.data.message : '未知错误') });
+      const errMsg = (resp && resp.message) || '未知错误';
+      messages.value.push({ role: 'assistant', content: '请求失败：' + errMsg });
+      console.error('请求失败:', resp);
     }
   } catch (e) {
     console.error('请求错误:', e);
@@ -407,6 +1097,9 @@ function clear() {
   lastCypher.value = '';
   lastResults.value = [];
   schema.value = null;
+  toolCalls.value = [];
+  messageToolsMap.value = {};
+  expandedMessageTools.value = {};
   graphData.value = { nodes: [], links: [] };
   if (graphInstance && graphContainer.value) {
     graphContainer.value.innerHTML = '';
@@ -433,365 +1126,1131 @@ function formatContent(text) {
 }
 </script>
 
+
 <style scoped>
-.graphrag-container { 
-  padding: 20px;
-  height: 100%;
+/* 容器 */
+.graphrag-container {
+  height: 100vh;
   display: flex;
   flex-direction: column;
-  /* background: #f5f7fa; */
+  background: #f0f2f5;
+  overflow: hidden;
 }
 
-.controls { 
-  margin-bottom: 16px;
+/* 主内容区 - 2列布局 */
+.main-content {
+  display: flex;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-column,
+.right-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.chat-column {
+  flex: 1;
+  min-width: 0;
   background: white;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.right-column {
+  flex: 0 0 380px;
+  background: white;
+  border-left: 1px solid #e4e7ed;
+  overflow-y: auto;
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.right-column.collapsed {
+  flex: 0 0 0;
+  min-width: 0;
+  border: none;
+  overflow: hidden;
+}
+
+.sidebar-toggle {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 80px;
+  background: white;
+  border: 1px solid #e4e7ed;
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 100;
+  box-shadow: -2px 0 8px rgba(0,0,0,0.06);
+  transition: all 0.3s ease;
+}
+
+.sidebar-toggle:hover {
+  background: #f5f7fa;
+}
+
+.sidebar-toggle .el-icon {
+  font-size: 18px;
+  color: #606266;
+}
+
+.right-column:not(.collapsed) .sidebar-toggle {
+  right: 380px;
+}
+
+.collapsed .sidebar-toggle {
+  right: 0;
+}
+
+.sidebar-content {
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* 详情折叠面板 */
+.detail-collapse {
+  border: none;
+}
+
+.detail-collapse :deep(.el-collapse-item__header) {
   padding: 16px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  background: #fafbfc;
+  border-bottom: 1px solid #e4e7ed;
+  font-weight: 600;
+  font-size: 14px;
+  color: #303133;
 }
 
-.actions { 
-  margin-top: 12px;
-  display: flex;
-  gap: 10px;
+.detail-collapse :deep(.el-collapse-item__wrap) {
+  border-bottom: 1px solid #e4e7ed;
 }
 
-.chat-and-results { 
-  display: flex;
-  gap: 16px;
+.detail-collapse :deep(.el-collapse-item__content) {
+  padding: 0;
+}
+
+/* 对话区 */
+.chat-scrollbar {
   flex: 1;
   min-height: 0;
 }
 
-.chat-panel,
-.results-panel {
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+/* 输入区 */
+.chat-input-section {
+  flex-shrink: 0;
+  padding: 16px 20px 20px 20px;
+  background: transparent;
+  border-top: none;
+}
+
+.input-container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+/* 示例快捷按钮 */
+.example-chips {
   display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.chat-panel { 
-  flex: 1;
-  min-width: 0;
-}
-
-.results-panel { 
-  width: 450px;
-  max-width: 450px;
-}
-
-.panel-header {
-  padding: 16px 20px;
-  border-bottom: 1px solid #e4e7ed;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: linear-gradient(to right, #f8f9fa, #ffffff);
-}
-
-.panel-header h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: #303133;
-  display: flex;
-  align-items: center;
   gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 
-.chat-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-}
-
-.results-content {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.empty-state {
-  display: flex;
-  flex-direction: column;
+.example-chip {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: #909399;
-  gap: 12px;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #f5f7fa;
+  border: 1px solid #e4e7ed;
+  border-radius: 20px;
+  font-size: 13px;
+  color: #606266;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
 }
 
-.empty-state p {
-  margin: 0;
+.example-chip:hover {
+  background: #ecf5ff;
+  border-color: #409eff;
+  color: #409eff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.15);
+}
+
+.example-chip .el-icon {
   font-size: 14px;
 }
 
-.message { 
-  margin-bottom: 20px;
+/* 输入框容器 */
+.input-wrapper {
+  width: 100%;
+}
+
+.input-box {
+  display: flex;
+  position: relative;
+  background: white;
+  border: 2px solid #e4e7ed;
+  border-radius: 24px;
+  padding: 12px 16px;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  align-items: center;
+}
+
+.input-box:hover {
+  border-color: #c0c4cc;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.input-box.focused {
+  border-color: #667eea;
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.15);
+}
+
+.input-box.hasContent {
+  border-color: #909399;
+}
+
+/* 文本输入框 */
+.message-input {
+  width: 100%;
+  min-height: 24px;
+  max-height: 200px;
+  padding: 0;
+  border: none;
+  outline: none;
+  resize: none;
+  font-size: 15px;
+  line-height: 24px;
+  color: #303133;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background: transparent;
+  overflow-y: auto;
+}
+
+.message-input::placeholder {
+  color: #c0c4cc;
+}
+
+.message-input:disabled {
+  color: #c0c4cc;
+  cursor: not-allowed;
+}
+
+/* 滚动条样式 */
+.message-input::-webkit-scrollbar {
+  width: 6px;
+}
+
+.message-input::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.message-input::-webkit-scrollbar-thumb {
+  background: #dcdfe6;
+  border-radius: 3px;
+}
+
+.message-input::-webkit-scrollbar-thumb:hover {
+  background: #c0c4cc;
+}
+
+/* 操作按钮区 */
+.input-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* margin-top: 8px; */
+  justify-content: flex-end;
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: #909399;
+}
+
+.icon-btn:hover {
+  background: #f5f7fa;
+  color: #606266;
+}
+
+.icon-btn:active {
+  transform: scale(0.95);
+}
+
+.send-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #e4e7ed;
+  color: white;
+  font-size: 18px;
+}
+
+.send-btn.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.send-btn.active:hover {
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  transform: scale(1.05);
+}
+
+.send-btn.active:active {
+  transform: scale(0.95);
+}
+
+.send-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* 提示信息 */
+.input-hint {
+  margin-top: 8px;
+  text-align: center;
+}
+
+.hint-text {
+  font-size: 12px;
+  color: #c0c4cc;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hint-text kbd {
+  padding: 2px 6px;
+  background: #f5f7fa;
+  border: 1px solid #e4e7ed;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: monospace;
+  color: #606266;
+}
+
+.hint-divider {
+  margin: 0 4px;
+  color: #dcdfe6;
+}
+
+/* 示例菜单 */
+.examples-menu {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.menu-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f0f2f5;
+}
+
+.menu-item {
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 4px;
+}
+
+.menu-item:hover {
+  background: #f5f7fa;
+}
+
+.item-label {
+  font-size: 14px;
+  color: #303133;
+  margin-bottom: 4px;
+}
+
+.item-type {
+  font-size: 12px;
+  color: #909399;
+}
+
+.chat-container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* 欢迎消息 */
+.welcome-message {
+  text-align: center;
+  padding: 80px 20px;
+  color: #606266;
+}
+
+.welcome-icon {
+  margin-bottom: 24px;
+  color: #909399;
+}
+
+.welcome-message h2 {
+  margin: 0 0 8px 0;
+  font-size: 28px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.welcome-message > p {
+  margin: 0 0 32px 0;
+  font-size: 15px;
+  color: #909399;
+}
+
+.welcome-hints {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  margin-top: 32px;
+}
+
+.hint-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  min-width: 100px;
+}
+
+.hint-item .el-icon {
+  font-size: 24px;
+  color: #667eea;
+}
+
+.hint-item span {
+  font-size: 13px;
+  color: #606266;
+  font-weight: 500;
+}
+
+/* 消息流 */
+.messages-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.message-item {
+  display: flex;
   animation: fadeIn 0.3s ease-in;
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-.message-header {
+.message-content {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
+  gap: 12px;
+  max-width: 100%;
 }
 
-.message .role { 
-  font-weight: 600;
+.message-avatar {
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.message-bubble {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 用户消息 */
+.user-message {
+  justify-content: flex-end;
+}
+
+.user-message .message-content {
+  flex-direction: row-reverse;
+}
+
+.user-bubble {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 12px 16px;
+  border-radius: 18px 18px 4px 18px;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+  max-width: 70%;
+}
+
+.user-bubble .message-text {
   font-size: 14px;
-  color: #606266;
+  line-height: 1.6;
+  word-break: break-word;
 }
 
-.message.user .content { 
-  background: #ecf5ff;
-  padding: 12px 16px;
-  border-radius: 8px;
-  border-left: 3px solid #409eff;
-  margin-left: 42px;
+/* AI 消息 */
+.assistant-message {
+  justify-content: flex-start;
 }
 
-.message.assistant .content { 
-  background: #f0f9ff;
-  padding: 12px 16px;
-  border-radius: 8px;
-  border-left: 3px solid #67c23a;
-  margin-left: 42px;
+.assistant-bubble {
+  background: #f8f9fa;
+  padding: 16px;
+  border-radius: 4px 18px 18px 18px;
+  border: 1px solid #e4e7ed;
+  max-width: 100%;
 }
 
-.collapse-title {
-    padding-left: 10px;
+/* 工具调用部分 */
+.tool-calls-section {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.section-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 500;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #606266;
+  background: #fafbfc;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s ease;
 }
 
-.results-wrapper,
-.schema-wrapper {
-  max-height: 300px;
-  overflow-y: auto;
+.section-header:hover {
+  background: #f0f2f5;
 }
 
-.graph-wrapper {
-  position: relative;
-  padding: 8px;
+.toggle-icon {
+  margin-left: auto;
+  transition: transform 0.3s ease;
 }
 
-.graph-debug {
+.toggle-icon.expanded {
+  transform: rotate(180deg);
+}
+
+.tool-calls-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tool-call-card {
+  background: white;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tool-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
-  padding: 4px 8px;
-  background: #f5f7fa;
-  border-radius: 4px;
+  padding: 10px 12px;
+  background: #fafbfc;
+  border-bottom: 1px solid #e4e7ed;
 }
 
-.graph-container {
-  width: 100%;
-  height: 350px;
-  border: 1px solid #e4e7ed;
-  border-radius: 6px;
-  background: #fafafa;
-  overflow: hidden;
-  position: relative;
-}
-
-.graph-container canvas {
-  display: block;
-}
-
-.graph-legend {
+.tool-step {
   display: flex;
+  align-items: center;
   gap: 8px;
-  margin-top: 8px;
+}
+
+.step-badge {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #667eea;
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
   justify-content: center;
 }
 
-.cypher, 
-.results-json, 
-.schema {
+.tool-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.tool-details-collapse {
+  border: none;
+}
+
+.tool-details-collapse :deep(.el-collapse-item__header) {
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  height: auto;
+  line-height: 1.5;
+}
+
+.tool-details-collapse :deep(.el-collapse-item__wrap) {
+  border: none;
+}
+
+.tool-details-collapse :deep(.el-collapse-item__content) {
+  padding: 0 12px 12px 12px;
+}
+
+.collapse-trigger {
+  font-size: 12px;
+  color: #409eff;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tool-detail-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.detail-block {
+  background: #f8f9fa;
+  padding: 10px;
+  border-radius: 6px;
+}
+
+.block-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #606266;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.param-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.code-block {
+  margin: 0;
+  padding: 10px;
+  background: #282c34;
+  color: #abb2bf;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  font-family: 'Consolas', 'Monaco', monospace;
+  overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.results-preview {
+  font-size: 11px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  color: #606266;
+  white-space: pre-wrap;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.more-indicator {
+  display: block;
+  margin-top: 8px;
+  color: #909399;
+  font-style: italic;
+}
+
+.graph-stats {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: #606266;
+}
+
+.graph-stats span {
+  padding: 4px 10px;
+  background: white;
+  border-radius: 4px;
+  border: 1px solid #e4e7ed;
+}
+
+/* 答案部分 */
+.answer-section {
+  margin-bottom: 12px;
+}
+
+.answer-section .message-text {
+  font-size: 14px;
+  line-height: 1.8;
+  color: #303133;
+}
+
+/* 消息元信息 */
+.message-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid #f0f2f5;
+  margin-top: 8px;
+}
+
+.meta-time {
+  font-size: 11px;
+  color: #c0c4cc;
+}
+
+/* 加载动画 */
+.typing-indicator {
+  display: flex;
+  gap: 6px;
+  padding: 8px 0;
+}
+
+.typing-indicator span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #909399;
+  animation: typing 1.4s infinite;
+}
+
+.typing-indicator span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-indicator span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typing {
+  0%, 60%, 100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-10px);
+  }
+}
+
+
+
+/* 推理过程内容 */
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 2px 0;
+}
+
+.collapse-body {
+  padding: 16px;
+}
+
+.step-index-inline {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #409eff;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.step-name-inline {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+  flex: 1;
+}
+
+.step-details {
+  padding: 8px 0;
+}
+
+.detail-section {
+  margin-bottom: 12px;
+}
+
+.detail-section:last-child {
+  margin-bottom: 0;
+}
+
+.detail-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #606266;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.detail-content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.code-display-inline {
+  margin: 0;
+  padding: 8px;
+  background: #282c34;
+  color: #abb2bf;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-word;
-  background: #fafafa;
-  padding: 12px;
-  border-radius: 6px;
-  border: 1px solid #e4e7ed;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* 汇总统计 */
+.summary-stats {
+  padding: 4px 0;
+}
+
+/* 技术详情 */
+.collapse-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 13px;
-  line-height: 1.6;
+  font-weight: 600;
+  color: #303133;
+  flex: 1;
+}
+
+.collapse-body {
+  padding: 16px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.code-display {
   margin: 0;
+  padding: 12px;
+  background: #282c34;
+  color: #abb2bf;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.6;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* Markdown 样式 */
-.message.assistant .content :deep(h1),
-.message.assistant .content :deep(h2),
-.message.assistant .content :deep(h3),
-.message.assistant .content :deep(h4) {
-  margin: 16px 0 10px 0;
+.message-text :deep(h1),
+.message-text :deep(h2),
+.message-text :deep(h3),
+.message-text :deep(h4) {
+  margin: 16px 0 12px 0;
   font-weight: 600;
   color: #303133;
   line-height: 1.4;
 }
 
-.message.assistant .content :deep(h1) { font-size: 1.5em; border-bottom: 2px solid #e4e7ed; padding-bottom: 8px; }
-.message.assistant .content :deep(h2) { font-size: 1.3em; border-bottom: 1px solid #ebeef5; padding-bottom: 6px; }
-.message.assistant .content :deep(h3) { font-size: 1.15em; }
-.message.assistant .content :deep(h4) { font-size: 1.05em; }
+.message-text :deep(h1) { font-size: 1.5em; }
+.message-text :deep(h2) { font-size: 1.35em; }
+.message-text :deep(h3) { font-size: 1.2em; }
+.message-text :deep(h4) { font-size: 1.1em; }
 
-.message.assistant .content :deep(p) {
+.message-text :deep(p) {
   margin: 8px 0;
   line-height: 1.8;
-  color: #606266;
 }
 
-.message.assistant .content :deep(code) {
-  background: #f4f4f5;
-  padding: 3px 8px;
-  border-radius: 4px;
+.message-text :deep(code) {
+  background: #e7f3ff;
+  padding: 2px 6px;
+  border-radius: 3px;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 0.9em;
-  color: #e6a23c;
-  border: 1px solid #ebeef5;
+  color: #1890ff;
 }
 
-.message.assistant .content :deep(pre) {
+.message-text :deep(pre) {
   background: #282c34;
   color: #abb2bf;
-  padding: 16px;
+  padding: 14px;
   border-radius: 8px;
   overflow-x: auto;
   margin: 12px 0;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
-.message.assistant .content :deep(pre code) {
+.message-text :deep(pre code) {
   background: none;
   padding: 0;
   color: #abb2bf;
-  border: none;
 }
 
-.message.assistant .content :deep(ul),
-.message.assistant .content :deep(ol) {
+.message-text :deep(ul),
+.message-text :deep(ol) {
   margin: 10px 0;
   padding-left: 28px;
 }
 
-.message.assistant .content :deep(li) {
+.message-text :deep(li) {
   margin: 6px 0;
   line-height: 1.8;
-  color: #606266;
 }
 
-.message.assistant .content :deep(blockquote) {
-  border-left: 4px solid #409eff;
-  margin: 12px 0;
-  padding: 10px 16px;
-  background: #f4f4f5;
-  color: #606266;
-  border-radius: 4px;
-}
-
-.message.assistant .content :deep(table) {
+.message-text :deep(table) {
   border-collapse: collapse;
   width: 100%;
   margin: 12px 0;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  font-size: 13px;
 }
 
-.message.assistant .content :deep(th),
-.message.assistant .content :deep(td) {
+.message-text :deep(th),
+.message-text :deep(td) {
   border: 1px solid #e4e7ed;
   padding: 10px 12px;
   text-align: left;
 }
 
-.message.assistant .content :deep(th) {
+.message-text :deep(th) {
   background: #f5f7fa;
   font-weight: 600;
   color: #303133;
 }
 
-.message.assistant .content :deep(td) {
-  color: #606266;
-}
-
-.message.assistant .content :deep(a) {
-  color: #409eff;
-  text-decoration: none;
-  border-bottom: 1px solid transparent;
-  transition: border-color 0.3s;
-}
-
-.message.assistant .content :deep(a:hover) {
-  border-bottom-color: #409eff;
-}
-
-.message.assistant .content :deep(strong) {
+.message-text :deep(strong) {
   font-weight: 600;
   color: #303133;
 }
 
-.message.assistant .content :deep(em) {
-  font-style: italic;
+.message-text :deep(blockquote) {
+  border-left: 4px solid #667eea;
+  padding-left: 16px;
+  margin: 12px 0;
   color: #606266;
+  font-style: italic;
 }
 
-/* 滚动条样式 */
-.chat-content::-webkit-scrollbar,
-.results-content::-webkit-scrollbar,
-.results-wrapper::-webkit-scrollbar,
-.schema-wrapper::-webkit-scrollbar {
+.message-text :deep(a) {
+  color: #409eff;
+  text-decoration: none;
+}
+
+.message-text :deep(a:hover) {
+  text-decoration: underline;
+}
+
+/* 滚动条 */
+/* .chat-scrollbar:deep(.el-scrollbar__wrap),
+.collapse-body {
+  scrollbar-width: thin;
+  scrollbar-color: #c0c4cc #f5f7fa;
+} */
+
+.chat-scrollbar:deep(.el-scrollbar__wrap)::-webkit-scrollbar,
+.collapse-body::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
-.chat-content::-webkit-scrollbar-thumb,
-.results-content::-webkit-scrollbar-thumb,
-.results-wrapper::-webkit-scrollbar-thumb,
-.schema-wrapper::-webkit-scrollbar-thumb {
-  background: #dcdfe6;
+.chat-scrollbar:deep(.el-scrollbar__wrap)::-webkit-scrollbar-thumb,
+.collapse-body::-webkit-scrollbar-thumb {
+  background: #c0c4cc;
   border-radius: 3px;
 }
 
-.chat-content::-webkit-scrollbar-thumb:hover,
-.results-content::-webkit-scrollbar-thumb:hover,
-.results-wrapper::-webkit-scrollbar-thumb:hover,
-.schema-wrapper::-webkit-scrollbar-thumb:hover {
-  background: #c0c4cc;
+.chat-scrollbar:deep(.el-scrollbar__wrap)::-webkit-scrollbar-track,
+.collapse-body::-webkit-scrollbar-track {
+  background: #f5f7fa;
 }
 
-:deep(.el-collapse-item__content){
-    padding-bottom: 0 !important;
-}
-
-/* 响应式设计 */
-@media (max-width: 1200px) {
-  .results-panel {
-    width: 350px;
-    max-width: 350px;
+/* 响应式 */
+@media (max-width: 1400px) {
+  .right-column {
+    flex: 0 0 380px;
   }
 }
 
-@media (max-width: 992px) {
-  .chat-and-results {
+@media (max-width: 1200px) {
+  .main-content {
     flex-direction: column;
   }
   
-  .results-panel {
+  .chat-column,
+  .right-column {
+    flex: none;
     width: 100%;
-    max-width: 100%;
-    height: 400px;
+    border: none;
+  }
+  
+  .chat-column {
+    flex: 1;
+    min-height: 0;
+  }
+  
+  .right-column {
+    max-height: 300px;
+    border-top: 1px solid #e4e7ed;
+    border-left: none;
+  }
+  
+  .right-column.collapsed {
+    flex: 0 0 0;
+    max-height: 0;
+  }
+  
+  .sidebar-toggle {
+    left: auto;
+    right: 0;
+    top: auto;
+    bottom: 60px;
+    transform: none;
+    width: 80px;
+    height: 32px;
+    border-radius: 8px 8px 0 0;
+    border-bottom: none;
+    border-right: 1px solid #e4e7ed;
+  }
+  
+  .right-column:not(.collapsed) .sidebar-toggle {
+    right: 0;
+  }
+  
+  .collapsed .sidebar-toggle {
+    right: 0;
+  }
+  
+  .user-bubble {
+    max-width: 85%;
+  }
+}
+
+@media (max-width: 768px) {
+  .chat-container {
+    padding: 12px;
+  }
+  
+  .welcome-message {
+    padding: 40px 12px;
+  }
+  
+  .welcome-hints {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .user-bubble {
+    max-width: 90%;
+  }
+  
+  .message-content {
+    gap: 8px;
+  }
+  
+  .input-row {
+    flex-wrap: wrap;
+  }
+  
+  .input-row .el-select {
+    width: 100% !important;
+  }
+  
+  .chat-input-section {
+    padding: 12px;
+  }
+  
+  .example-chips {
+    flex-direction: column;
+  }
+  
+  .example-chip {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .input-box {
+    border-radius: 20px;
+    padding: 10px 14px;
+  }
+  
+  .message-input {
+    font-size: 14px;
+  }
+  
+  .input-actions {
+    margin-top: 6px;
+  }
+  
+  .right-column {
+    max-height: 250px;
   }
 }
 </style>
