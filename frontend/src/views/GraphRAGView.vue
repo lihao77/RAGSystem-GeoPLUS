@@ -320,101 +320,122 @@
                 </div>
               </template>
               <div class="collapse-body">
-                <el-collapse v-model="expandedSteps" accordion>
-                  <el-collapse-item 
+                <div class="tool-steps-list">
+                  <div 
                     v-for="(tool, idx) in toolCalls" 
                     :key="idx"
-                    :name="String(idx)"
+                    class="tool-step-item"
                   >
-                    <template #title>
-                      <div class="step-header">
-                        <div class="step-index-inline">{{ idx + 1 }}</div>
-                        <div class="step-name-inline">
-                          {{ getToolDisplayName(tool.name) }}
-                        </div>
-                        <el-tag 
-                          v-if="hasToolData(tool)" 
-                          size="small" 
-                          :type="getToolDataType(tool)"
-                        >
-                          {{ getToolDataSummary(tool) }}
-                        </el-tag>
+                    <div class="step-header-main">
+                      <div class="step-index-inline">{{ idx + 1 }}</div>
+                      <div class="step-name-inline">
+                        {{ getToolDisplayName(tool.name) }}
                       </div>
-                    </template>
-                    <div class="step-details">
-                      <!-- 参数 -->
-                      <div class="detail-section" v-if="tool.arguments && Object.keys(tool.arguments).length > 0">
-                        <div class="detail-label">📋 输入参数</div>
-                        <div class="detail-content">
-                          <el-tag 
-                            v-for="(val, key) in formatToolArgs(tool.arguments)" 
-                            :key="key"
-                            size="small"
-                            style="margin: 2px;"
-                          >
-                            {{ key }}: {{ val }}
-                          </el-tag>
-                        </div>
-                      </div>
-                      
-                      <!-- Cypher 查询 -->
-                      <div 
-                        class="detail-section" 
-                        v-if="tool.result && tool.result.data && tool.result.data.cypher"
+                      <el-tag 
+                        v-if="hasToolData(tool)" 
+                        size="small" 
+                        :type="getToolDataType(tool)"
                       >
-                        <div class="detail-label">
-                          💻 Cypher 查询
-                          <el-button 
-                            size="small" 
-                            text 
-                            @click="copyCypher(tool.result.data.cypher)"
-                          >
-                            复制
-                          </el-button>
-                        </div>
-                        <pre class="code-display-inline">{{ tool.result.data.cypher }}</pre>
-                      </div>
-                      
-                      <!-- 查询结果 -->
-                      <div 
-                        class="detail-section" 
-                        v-if="getToolResults(tool).length > 0"
+                        {{ getToolDataSummary(tool) }}
+                      </el-tag>
+                      <el-tag 
+                        :type="tool.result?.success ? 'success' : 'danger'"
+                        size="small"
+                        style="margin-left: auto;"
                       >
-                        <div class="detail-label">
-                          📊 查询结果
-                          <el-tag size="small" type="success">
-                            {{ getToolResults(tool).length }} 条
-                          </el-tag>
-                        </div>
-                        <pre class="code-display-inline">{{ JSON.stringify(getToolResults(tool), null, 2) }}</pre>
-                      </div>
-                      
-                      <!-- 图谱数据 -->
-                      <div 
-                        class="detail-section" 
-                        v-if="getToolGraphData(tool)"
-                      >
-                        <div class="detail-label">
-                          🌐 图谱数据
-                          <el-tag size="small" type="success">
-                            {{ getToolGraphData(tool).nodes?.length || 0 }} 节点 / 
-                            {{ getToolGraphData(tool).relationships?.length || 0 }} 关系
-                          </el-tag>
-                        </div>
-                      </div>
-                      
-                      <!-- 状态 -->
-                      <div class="detail-section">
-                        <el-tag 
-                          :type="tool.result?.success ? 'success' : 'danger'"
-                          size="small"
-                        >
-                          {{ tool.result?.success ? '✓ 执行成功' : '✗ 执行失败' }}
-                        </el-tag>
-                      </div>
+                        {{ tool.result?.success ? '✓' : '✗' }}
+                      </el-tag>
                     </div>
-                  </el-collapse-item>
-                </el-collapse>
+                    
+                    <div class="step-details-expandable">
+                      <el-collapse>
+                        <!-- 参数 -->
+                        <el-collapse-item 
+                          v-if="tool.arguments && Object.keys(tool.arguments).length > 0"
+                          :name="`${idx}-args`"
+                        >
+                          <template #title>
+                            <span class="detail-item-title">📋 输入参数</span>
+                          </template>
+                          <div class="detail-content">
+                            <el-tag 
+                              v-for="(val, key) in formatToolArgs(tool.arguments)" 
+                              :key="key"
+                              size="small"
+                              style="margin: 2px;"
+                            >
+                              {{ key }}: {{ val }}
+                            </el-tag>
+                          </div>
+                        </el-collapse-item>
+                        
+                        <!-- Cypher 查询 -->
+                        <el-collapse-item 
+                          v-if="tool.result && tool.result.data && tool.result.data.cypher"
+                          :name="`${idx}-cypher`"
+                        >
+                          <template #title>
+                            <span class="detail-item-title">
+                              💻 Cypher 查询
+                              <el-button 
+                                size="small" 
+                                text 
+                                type="primary"
+                                @click.stop="copyCypher(tool.result.data.cypher)"
+                                style="margin-left: 8px;"
+                              >
+                                复制
+                              </el-button>
+                            </span>
+                          </template>
+                          <pre class="code-display-inline">{{ tool.result.data.cypher }}</pre>
+                        </el-collapse-item>
+                        
+                        <!-- 查询结果 -->
+                        <el-collapse-item 
+                          v-if="getToolResults(tool).length > 0"
+                          :name="`${idx}-results`"
+                        >
+                          <template #title>
+                            <span class="detail-item-title">
+                              📊 查询结果
+                              <el-tag size="small" type="success" style="margin-left: 8px;">
+                                {{ getToolResults(tool).length }} 条
+                              </el-tag>
+                            </span>
+                          </template>
+                          <pre class="code-display-inline">{{ JSON.stringify(getToolResults(tool), null, 2) }}</pre>
+                        </el-collapse-item>
+                        
+                        <!-- 图谱数据 -->
+                        <el-collapse-item 
+                          v-if="getToolGraphData(tool)"
+                          :name="`${idx}-graph`"
+                        >
+                          <template #title>
+                            <span class="detail-item-title">
+                              🌐 图谱数据
+                              <el-tag size="small" type="success" style="margin-left: 8px;">
+                                {{ getToolGraphData(tool).nodes?.length || 0 }} 节点 / 
+                                {{ getToolGraphData(tool).relationships?.length || 0 }} 关系
+                              </el-tag>
+                            </span>
+                          </template>
+                          <div class="graph-data-preview">
+                            <div v-if="getToolGraphData(tool).nodes?.length > 0" style="margin-bottom: 8px;">
+                              <div style="font-weight: 600; margin-bottom: 4px; font-size: 12px; color: #606266;">节点示例:</div>
+                              <pre class="code-display-inline">{{ JSON.stringify(getToolGraphData(tool).nodes.slice(0, 2), null, 2) }}</pre>
+                            </div>
+                            <div v-if="getToolGraphData(tool).relationships?.length > 0">
+                              <div style="font-weight: 600; margin-bottom: 4px; font-size: 12px; color: #606266;">关系示例:</div>
+                              <pre class="code-display-inline">{{ JSON.stringify(getToolGraphData(tool).relationships.slice(0, 2), null, 2) }}</pre>
+                            </div>
+                          </div>
+                        </el-collapse-item>
+                      </el-collapse>
+                    </div>
+                  </div>
+                </div>
               </div>
             </el-collapse-item>
 
@@ -1907,6 +1928,68 @@ function formatContent(text) {
 
 .collapse-body {
   padding: 16px;
+}
+
+.tool-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tool-step-item {
+  background: white;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.step-header-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: #fafbfc;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.step-details-expandable {
+  background: white;
+}
+
+.step-details-expandable .el-collapse {
+  border: none;
+}
+
+.step-details-expandable :deep(.el-collapse-item__header) {
+  padding: 10px 12px;
+  background: transparent;
+  border-bottom: 1px solid #f5f7fa;
+  height: auto;
+  line-height: 1.5;
+  font-size: 13px;
+}
+
+.step-details-expandable :deep(.el-collapse-item__wrap) {
+  border: none;
+  background: #fafbfc;
+}
+
+.step-details-expandable :deep(.el-collapse-item__content) {
+  padding: 12px;
+}
+
+.detail-item-title {
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #606266;
+}
+
+.graph-data-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .step-index-inline {
