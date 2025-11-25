@@ -95,3 +95,6 @@ celerybeat-schedule
 
 # SageMath parsed files
 *.sage.py
+
+config.json
+config.js

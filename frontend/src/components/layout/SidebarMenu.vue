@@ -34,7 +34,7 @@
         </el-icon>
         <template #title><span>GraphRAG 问答</span></template>
       </el-menu-item>
-      <el-sub-menu index="data-management">
+      <!-- <el-sub-menu index="data-management">
         <template #title>
           <el-icon>
             <Document />
@@ -59,7 +59,7 @@
           </el-icon>
           <template #title><span>参数配置</span></template>
         </el-menu-item>
-      </el-sub-menu>
+      </el-sub-menu> -->
     </el-menu>
 
     <div class="sidebar-footer" v-if="!props.isCollapse">

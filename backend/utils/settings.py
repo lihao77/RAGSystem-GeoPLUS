@@ -47,11 +47,7 @@ def load_system_settings():
             'apiKey': os.getenv('GEOCODING_API_KEY', '')
         },
         'system': {
-            'maxWorkers': int(os.getenv('MAX_WORKERS', '4')),
-            'dataDir': os.getenv('DATA_DIR', os.path.join(os.path.dirname(__file__), '../../data')),
-            'validateData': os.getenv('VALIDATE_DATA', 'false').lower() == 'true',
-            'exportJson': os.getenv('EXPORT_JSON', 'false').lower() == 'true',
-            'pythonPath': os.getenv('PYTHON_PATH', 'python')
+            'maxWorkers': int(os.getenv('MAX_WORKERS', '4'))
         }
     }
     
@@ -82,20 +78,17 @@ def check_config_complete(settings):
     检查配置是否完整
     """
     missing_configs = []
-    
+
     if not settings.get('llm', {}).get('apiKey'):
         missing_configs.append('LLM API密钥')
-    
+
     if not settings.get('geocoding', {}).get('apiKey'):
         missing_configs.append('地理编码API密钥')
-    
+
     neo4j_config = settings.get('neo4j', {})
     if not all([neo4j_config.get('uri'), neo4j_config.get('user'), neo4j_config.get('password')]):
         missing_configs.append('Neo4j数据库连接信息')
-    
-    if not settings.get('system', {}).get('pythonPath'):
-        missing_configs.append('Python解释器路径')
-    
+
     return {
         'isComplete': len(missing_configs) == 0,
         'missingConfigs': missing_configs

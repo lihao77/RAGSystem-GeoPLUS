@@ -17,6 +17,13 @@ coloredlogs==15.0.1
 # 文件处理
 Werkzeug==2.3.7
 
+# 知识图谱构建依赖
+llmjson>=1.0.0
+json2graph-for-review>=0.1.0
+python-docx>=1.1.0
+tiktoken>=0.7.0
+json-repair>=0.25.0
+
 # JSON处理（Python内置，但列出以确保兼容性）
 # json - 内置模块
 

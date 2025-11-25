@@ -31,24 +31,24 @@ const routes = [
     component: () => import('../views/SearchView.vue'),
     meta: { title: '实体查询' }
   },
-  {
-    path: '/settings',
-    name: 'settings',
-    component: () => import('../views/SettingsView.vue'),
-    meta: { title: '系统设置' }
-  },
-  {
-    path: '/import',
-    name: 'import',
-    component: () => import('../views/ImportView.vue'),
-    meta: { title: '数据导入' }
-  },
-  {
-    path: '/evaluation',
-    name: 'evaluation',
-    component: () => import('../views/EvaluationView.vue'),
-    meta: { title: '图谱评估' }
-  },
+  // {
+  //   path: '/settings',
+  //   name: 'settings',
+  //   component: () => import('../views/SettingsView.vue'),
+  //   meta: { title: '系统设置' }
+  // },
+  // {
+  //   path: '/import',
+  //   name: 'import',
+  //   component: () => import('../views/ImportView.vue'),
+  //   meta: { title: '数据导入' }
+  // },
+  // {
+  //   path: '/evaluation',
+  //   name: 'evaluation',
+  //   component: () => import('../views/EvaluationView.vue'),
+  //   meta: { title: '图谱评估' }
+  // },
   {
     path: '/graphrag',
     name: 'graphrag',

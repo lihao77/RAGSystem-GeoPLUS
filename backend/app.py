@@ -10,7 +10,6 @@ import logging
 from werkzeug.exceptions import RequestEntityTooLarge
 
 # 导入蓝图
-from routes.settings import settings_bp
 from routes.home import home_bp
 from routes.import_routes import import_bp
 from routes.search import search_bp
@@ -44,7 +43,6 @@ logger = logging.getLogger(__name__)
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # 注册蓝图
-app.register_blueprint(settings_bp, url_prefix='/api/settings')
 app.register_blueprint(home_bp, url_prefix='/api/home')
 app.register_blueprint(import_bp, url_prefix='/api/import')
 app.register_blueprint(search_bp, url_prefix='/api/search')
