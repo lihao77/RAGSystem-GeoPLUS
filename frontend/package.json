@@ -23,10 +23,12 @@
     "marked": "^16.4.1",
     "neo4j-driver": "^5.28.1",
     "ol": "^10.6.1",
+    "sass-embedded": "^1.93.3",
     "three": "^0.159.0",
     "three-spritetext": "^1.8.1",
     "vue": "^3.3.8",
-    "vue-router": "^4.2.5"
+    "vue-router": "^4.2.5",
+    "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^4.5.0",

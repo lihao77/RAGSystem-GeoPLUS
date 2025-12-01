@@ -89,7 +89,7 @@
               <el-table-column prop="date" label="处理日期" width="180" />
               <el-table-column label="操作" width="120">
                 <template #default="scope">
-                  <el-button type="text" size="small" @click="viewDocument(scope.row)">查看</el-button>
+                  <el-button link size="small" @click="viewDocument(scope.row)">查看</el-button>
                 </template>
               </el-table-column>
             </el-table>
